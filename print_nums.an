@@ -1,0 +1,8 @@
+if cfg('main'):
+    main()
+
+fun main():
+    num = 0
+    loop:
+        print(num)
+        num = (num + 1) % 10
