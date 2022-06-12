@@ -50,7 +50,7 @@ macro_rules! dec_pattern {
 
 macro_rules! whitespace_pattern {
     () => {
-        b'\n' | b'\r' | b' ' | b'\t'
+        b' ' | b'\t'
     };
 }
 
@@ -73,10 +73,10 @@ pub enum LiteralTokenType {
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum CommentTokenType {
-    LineComment,
-    BlockComment,
-    DocsLineComment,
-    DocsBlockComment,
+    Line,
+    Block,
+    DocsLine,
+    DocsBlock,
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -116,6 +116,7 @@ pub enum OperatorTokenType {
     LSquare,
     RSquare,
     Assign,
+    Terminator,
 
 }
 
@@ -240,9 +241,8 @@ impl Display for LexerError<'_> {
 }
 
 type LexerResult<'a, T> = Result<T, LexerError<'a>>;
-
 trait Parser: Send + Sync {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>>;
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>;
 }
 
 trait Boxed {
@@ -263,7 +263,7 @@ struct TagParser {
 }
 
 impl Parser for TagParser {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>> {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         let end = lexer.index + self.tag.len();
         if end > lexer.input.len() {
             return Err(lexer.create_parser_lex_error());
@@ -279,7 +279,7 @@ impl Parser for TagParser {
 struct HexIntParser;
 
 impl Parser for HexIntParser {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>> {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
         let mut index = lexer.index;
         if index == lexer.input.len() - 1 {
             return Err(lexer.create_parser_lex_error());
@@ -319,7 +319,7 @@ impl Parser for HexIntParser {
 struct BinIntParser;
 
 impl Parser for BinIntParser {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>> {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
         let mut index = lexer.index;
         if index == lexer.input.len() - 1 {
             return Err(lexer.create_parser_lex_error());
@@ -359,7 +359,7 @@ impl Parser for BinIntParser {
 struct DecIntParser;
 
 impl Parser for DecIntParser {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>> {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
         let mut index = lexer.index;
 
         if index >= lexer.input.len() {
@@ -386,7 +386,7 @@ impl Parser for DecIntParser {
 
 struct EOIParser;
 impl Parser for EOIParser {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>> {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
         if lexer.index == lexer.input.len() {
             return Ok(lexer.create_token(TokenType::Eoi, 0));
         }
@@ -396,7 +396,7 @@ impl Parser for EOIParser {
 
 struct WhitespaceParser;
 impl Parser for WhitespaceParser {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>> {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
         let mut len = 0;
         if !matches!(
             lexer.input.as_bytes()[lexer.index + len],
@@ -423,7 +423,7 @@ struct LineCommentParser {
 }
 
 impl Parser for LineCommentParser {
-    fn parse<'a>(&self, lexer: &'a mut Lexer) -> LexerResult<'a, Token<'a>> {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
         if lexer.index + self.prefix.len() > lexer.input.len() {
             // Not enough input left for our prefix to fit in -> cannot be a line comment.
             return Err(lexer.create_parser_lex_error());
@@ -447,12 +447,13 @@ impl Parser for LineCommentParser {
 fn tag(tag: &'static str, token_type: TokenType) -> TagParser {
     TagParser { tag, token_type }
 }
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Lexer<'a> {
     line_number: LineNumber,
     column_number: ColumnNumber,
     input: &'a str,
     index: usize,
+    
 }
 
 impl<'a> Lexer<'a> {
@@ -469,8 +470,7 @@ impl<'a> Lexer<'a> {
         let this = self as *mut Self;
         let mut res = vec![];
         loop {
-            // SAFETY: Hack to get around the borrow checker not being able to reason about loops. self only gets permanently borrowed when the error is returned.
-            let next = unsafe { (*this).yield_token()? };
+            let next = self.yield_token()?;
             res.push(next);
             if next.token_type == TokenType::Eoi {
                 return Ok(res);
@@ -478,7 +478,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn create_token(&mut self, token_type: TokenType, len: usize) -> Token {
+    fn create_token(&mut self, token_type: TokenType, len: usize) -> Token<'a> {
         let index = self.index;
         let column_number = self.column_number;
         let line_number = self.line_number;
@@ -532,8 +532,7 @@ impl<'a> Lexer<'a> {
             column_number,
         }
     }
-    fn yield_token(&mut self) -> LexerResult<Token> {
-        let this = self as *mut Self;
+    fn yield_token(&mut self) -> LexerResult<'a, Token<'a>> {
         use OperatorTokenType::*;
         use TokenType::*;
         
@@ -541,8 +540,12 @@ impl<'a> Lexer<'a> {
             HexIntParser.boxed(),
             BinIntParser.boxed(),
             DecIntParser.boxed(),
-            LineCommentParser {prefix: "///", return_type: CommentTokenType::DocsLineComment}.boxed(),
-            LineCommentParser {prefix: "//", return_type: CommentTokenType::LineComment}.boxed(),
+            LineCommentParser {prefix: "///", return_type: CommentTokenType::DocsLine}.boxed(),
+            LineCommentParser {prefix: "//", return_type: CommentTokenType::Line}.boxed(),
+            tag(";", Operator(Terminator)).boxed(),
+            tag("\r\n", Operator(Terminator)).boxed(),
+            tag("\r", Operator(Terminator)).boxed(),
+            tag("\n", Operator(Terminator)).boxed(),
             tag("<<=", Operator(BitShiftLeftAssign)).boxed(),
             tag("<<", Operator(BitShiftLeft)).boxed(),
             tag(">>=", Operator(BitShiftRightAssign)).boxed(),
@@ -587,7 +590,7 @@ impl<'a> Lexer<'a> {
             );
         }
         for (_i, parser) in PARSERS.iter().remove_last().enumerate() {
-            let res = parser.parse(unsafe { &mut *this });
+            let res = parser.parse(self);
 
             match res {
                 Err(e) => match e.error_type {
@@ -599,15 +602,15 @@ impl<'a> Lexer<'a> {
         }
         let res = PARSERS[PARSERS.len() - 1].parse(self);
         return match res {
-            Err(_) => Err(unsafe {
-                (*this).create_unknown_lex_error_with_len(
+            Err(_) => Err(
+                self.create_unknown_lex_error_with_len(
                     format!(
                         "Unknown Token starting with '{}'!",
-                        &(*this).input[(*this).index..=(*this).index]
+                        &self.input[self.index..=self.index]
                     ),
-                    (*this).distance_to_whitespace(),
+                    self.distance_to_whitespace(),
                 )
-            }),
+            ),
             Ok(v) => Ok(v),
         };
     }
@@ -622,15 +625,15 @@ impl<'a> Lexer<'a> {
 
         index - self.index
     }
-    fn create_parser_lex_error(&self) -> LexerError {
+    fn create_parser_lex_error(&self) -> LexerError<'a> {
         self.create_lex_error_base(String::new(), LexerErrorType::Unknown, 1)
     }
 
-    fn create_unknown_lex_error(&self, message: String) -> LexerError {
+    fn create_unknown_lex_error(&self, message: String) -> LexerError<'a> {
         self.create_lex_error_base(message, LexerErrorType::Unknown, 1)
     }
 
-    fn create_unknown_lex_error_with_len(&self, message: String, len: usize) -> LexerError {
+    fn create_unknown_lex_error_with_len(&self, message: String, len: usize) -> LexerError<'a> {
         self.create_lex_error_base(message, LexerErrorType::Unknown, len)
     }
 
@@ -639,7 +642,7 @@ impl<'a> Lexer<'a> {
         message: String,
         error_type: LexerErrorType,
         len: usize,
-    ) -> LexerError {
+    ) -> LexerError<'a> {
         LexerError::from(
             self.line_number,
             self.column_number,
@@ -651,7 +654,7 @@ impl<'a> Lexer<'a> {
         )
     }
 
-    fn create_malformed_lex_error_with_len(&self, message: String, len: usize) -> LexerError {
+    fn create_malformed_lex_error_with_len(&self, message: String, len: usize) -> LexerError<'a> {
         self.create_lex_error_base(message, LexerErrorType::Malformed, len)
     }
 }
