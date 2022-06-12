@@ -3,7 +3,9 @@ mod parser;
 
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::eyre;
+use termcolor::{StandardStream, ColorChoice, Color, ColorSpec, WriteColor};
 use std::fs::read_to_string;
+use std::io::{stdin, Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -31,14 +33,25 @@ fn main() {
     match run() {
         Ok(()) => (),
         Err(e) => {
-            println!("{e}");
+            
+            let mut stdout = StandardStream::stdout(ColorChoice::Always);
+            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
+            writeln!(&mut stdout, "{e}").unwrap();
+            writeln!(&mut stdout, "Press enter to exit.\n").unwrap();
+            let _ = stdin().read(&mut []);
             exit(69);
         }
     }
 }
 
 fn run() -> color_eyre::Result<()> {
-    let args = Cli::parse();
+    let args = match Cli::try_parse() {
+        Ok(v) => v,
+        Err(e) => {
+            e.print()?;
+            return Err(eyre!(""));
+        }
+    };
     match args.command {
         Commands::Lex(l) => {
             let contents = match (l.program, l.program_path) {

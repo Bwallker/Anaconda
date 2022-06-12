@@ -38,6 +38,7 @@ dependencies = [
  "nom-supreme",
  "pretty_assertions",
  "regex",
+ "termcolor",
 ]
 
 [[package]]
