@@ -19,6 +19,18 @@ impl<I: Iterator<Item = T>, T> Iterator for RemoveLast<I, T> {
     }
 }
 
+trait CharAtIndex {
+    fn char_at_index(&self, index: usize) -> Option<char>;
+}
+
+impl<T: AsRef<str>> CharAtIndex for T {
+    /// Returns the first char in the string.
+    fn char_at_index(&self, index: usize) -> Option<char> {
+        let this = self.as_ref();
+        this.get(index..).and_then(|x| x.chars().next())
+    }
+}
+
 trait RemoveLastTrait<I: Iterator<Item = T>, T> {
     fn remove_last(self) -> RemoveLast<I, T>;
 }
@@ -117,7 +129,6 @@ pub enum OperatorTokenType {
     RSquare,
     Assign,
     Terminator,
-
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -139,75 +150,65 @@ pub struct Token<'a> {
 type LineNumber = usize;
 type ColumnNumber = usize;
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy)]
-
-enum LexerErrorType {
-    /// For potential tokens that are clearly malformed versions of valid tokens. For instance 0x without a digit.
-    Malformed,
-    /// For potential tokens that are completely invalid for the given parser.
-    Unknown,
-}
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub struct LexerError<'a> {
+pub enum LexerError<'a> {
+    /// The next token is obviously syntactically invalid.
+    Incorrect(Vec<LexerErrorContents<'a>>),
+    /// The next token is of the wrong form for this parser, and may still be valid for another parser.
+    WrongForm,
+}
+
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct LexerErrorContents<'a> {
     line_number: LineNumber,
     column_number: ColumnNumber,
     index: usize,
     error_message: String,
     input: &'a str,
-    error_type: LexerErrorType,
     len: usize,
 }
 
-impl<'a> LexerError<'a> {
-    fn from(
-        line_number: LineNumber,
-        column_number: ColumnNumber,
-        index: usize,
-        error_message: String,
-        input: &'a str,
-        error_type: LexerErrorType,
-        len: usize,
-    ) -> LexerError<'a> {
-        LexerError {
-            line_number,
-            column_number,
-            error_message,
-            input,
-            index,
-            error_type,
-            len,
-        }
-    }
-    fn find_line(&self) -> String {
-        let mut current_line = 0;
-        let mut start_index: LineNumber = 0;
-        let mut chars = self.input.chars();
+impl<'a> LexerErrorContents<'a> {
+    fn find_line(&self) -> &str {
+        let mut current_line = 0usize;
+        let mut start_index = 0;
         while current_line < self.line_number {
-            let c = chars.next().unwrap();
-            if c == '\n' {
+            if next_is_newline(self.input, &mut start_index, true) {
                 current_line += 1;
+            } else {
+                start_index += 1;
             }
-            start_index += 1;
         }
-        let mut end_index = start_index.wrapping_sub(1);
-        let mut next = chars.next();
-        while next.is_some() && next.unwrap() != '\n' {
-            next = chars.next();
-            end_index = end_index.wrapping_add(1);
+        let mut end_index = start_index;
+        loop {
+            if end_index >= self.input.len() {
+                break;
+            }
+            if self.input.get(end_index..=end_index) == Some("\n") {
+                break;
+            }
+            if self.input.get(end_index..=end_index + 1) == Some("\r\n") {
+                break;
+            }
+            if self.input.get(end_index..=end_index) == Some("\r") {
+                break;
+            }
+            end_index += 1;
         }
-        let mut res = String::from(&self.input[start_index..=end_index]);
-        if end_index + 1 < self.input.len() {
-            res.push_str(&self.input[end_index + 1..=end_index + 1]);
-        } else {
-            res.push(' ');
+        if end_index >= self.input.len() {
+            end_index = self.input.len() - 1;
         }
-        res
+        while self.input.as_bytes().get(end_index) == Some(&b'\r')
+            || self.input.as_bytes().get(end_index) == Some(&b'\n')
+        {
+            end_index -= 1;
+        }
+        &self.input[start_index..=end_index]
     }
 
     fn place_caret(&self) -> String {
         let mut i = 0;
         let mut res = String::new();
-
         while i < self.column_number {
             res.push(' ');
             i += 1;
@@ -217,26 +218,73 @@ impl<'a> LexerError<'a> {
 
             i += 1;
         }
-        i += self.index - self.column_number;
-        while i < self.input.len() && !matches!(&self.input[i..=i], "\n" | "\t" | "\r" | " ") {
-            res.push(' ');
-            i += 1;
-        }
         res
     }
+    fn with_contents(
+        line_number: LineNumber,
+        column_number: ColumnNumber,
+        index: usize,
+        error_message: String,
+        input: &'a str,
+        len: usize,
+    ) -> Self {
+        LexerErrorContents {
+            line_number,
+            column_number,
+            error_message,
+            input,
+            index,
+            len,
+        }
+    }
 }
+impl<'a> LexerError<'a> {
+    fn with_contents(
+        line_number: LineNumber,
+        column_number: ColumnNumber,
+        index: usize,
+        error_message: String,
+        input: &'a str,
+        len: usize,
+    ) -> LexerError<'a> {
+        LexerError::Incorrect(vec![LexerErrorContents {
+            line_number,
+            column_number,
+            error_message,
+            input,
+            index,
+            len,
+        }])
+    }
 
+    /// line_number, column_number, index, error_message, input, len
+    fn create_errors<const N: usize>(
+        args: [(LineNumber, ColumnNumber, usize, String, &'a str, usize); N],
+    ) -> LexerError<'a> {
+        LexerError::Incorrect(Vec::from(
+            args.map(|x| LexerErrorContents::with_contents(x.0, x.1, x.2, x.3, x.4, x.5)),
+        ))
+    }
+}
 impl Display for LexerError<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\n{}\n{}:{} {}",
-            self.find_line(),
-            self.place_caret(),
-            self.column_number,
-            self.line_number,
-            self.error_message
-        )
+        match self {
+            LexerError::Incorrect(errors) => {
+                for e in errors {
+                    write!(
+                        f,
+                        "{}\n{}\n------------\n{}:{} {}\n\n",
+                        e.find_line(),
+                        e.place_caret(),
+                        e.line_number + 1,
+                        e.column_number + 1,
+                        e.error_message,
+                    )?
+                }
+                Ok(())
+            }
+            LexerError::WrongForm => unreachable!(),
+        }
     }
 }
 
@@ -265,40 +313,111 @@ struct TagParser {
 impl Parser for TagParser {
     fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         let end = lexer.index + self.tag.len();
-        if end > lexer.input.len() {
-            return Err(lexer.create_parser_lex_error());
-        }
-        let slice = &lexer.input[lexer.index..end];
-        if slice != self.tag {
-            return Err(lexer.create_parser_lex_error());
+        let slice = lexer.input.get(lexer.index..end);
+        if slice != Some(self.tag) {
+            return Err(LexerError::WrongForm);
         }
         Ok(lexer.create_token(self.token_type, self.tag.len()))
     }
 }
 
+fn tag(tag: &'static str, token_type: TokenType) -> TagParser {
+    TagParser { tag, token_type }
+}
+
+struct StringParser;
+
+impl Parser for StringParser {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
+        let mut index = lexer.index;
+        if lexer.input.as_bytes().get(index) != Some(&b'\'') {
+            return Err(LexerError::WrongForm);
+        }
+        index += 1;
+        let mut backslashes_in_a_row = 0usize;
+        loop {
+            let next = lexer.input.as_bytes().get(index);
+            if next == None {
+                return Err(lexer.create_lex_error_with_len("This string never ends.".into(), 1));
+            }
+            let next = *next.unwrap();
+            if backslashes_in_a_row % 2 == 0 && next == b'\'' {
+                index += 1;
+                break;
+            }
+            if next == b'\\' {
+                backslashes_in_a_row += 1;
+            } else {
+                backslashes_in_a_row = 0;
+            }
+            index += 1;
+        }
+
+        Ok(lexer.create_token(
+            TokenType::Literal(LiteralTokenType::String),
+            index - lexer.index,
+        ))
+    }
+}
+
+struct IdentifierParser;
+
+impl Parser for IdentifierParser {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
+        let mut index = lexer.index;
+
+        let first = lexer.input.as_bytes().get(index);
+        if first == None {
+            return Err(LexerError::WrongForm);
+        }
+        let first = *first.unwrap() as char;
+        if first.is_ascii() && !first.is_ascii_alphabetic() && first != '_' {
+            return Err(lexer.create_lex_error(format!(
+                "Variable names and function names must start with an ASCII alphabetic character or a unicode character or an underscore. '{}' is not that.",
+                first
+            )));
+        }
+
+        index += 1;
+
+        loop {
+            let next = lexer.input.char_at_index(index);
+            if next == None {
+                break;
+            }
+            let next = next.unwrap();
+            if next.is_ascii() && !next.is_ascii_alphanumeric() && next != '_' {
+                break;
+            }
+            index += next.len_utf8();
+        }
+
+        Ok(lexer.create_token(
+            TokenType::Literal(LiteralTokenType::Identifier),
+            index - lexer.index,
+        ))
+    }
+}
 struct HexIntParser;
 
 impl Parser for HexIntParser {
-    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         let mut index = lexer.index;
-        if index == lexer.input.len() - 1 {
-            return Err(lexer.create_parser_lex_error());
-        }
-        if &lexer.input[index..=index + 1] != "0x" && &lexer.input[index..=index + 1] != "0X" {
-            return Err(lexer.create_parser_lex_error());
+        if !matches!(lexer.input.get(index..=index + 1), Some("0x") | Some("0X")) {
+            return Err(LexerError::WrongForm);
         }
         index += 2;
         if index >= lexer.input.len() {
-            return Err(lexer.create_malformed_lex_error_with_len(
-                "Reached EOI while trying to parse hexadecimal integer".into(),
+            return Err(lexer.create_lex_error_with_len(
+                "The prefix for a hexadecimal integer must be followed by a valid digit.".into(),
                 3,
             ));
         }
         if !matches!(lexer.input.as_bytes()[index], hex_pattern!())
             || lexer.input.as_bytes()[index] == b'_'
         {
-            return Err(lexer.create_malformed_lex_error_with_len(
-                "Hexadecimal integers must start with a valid digit".into(),
+            return Err(lexer.create_lex_error_with_len(
+                "The prefix for a hexadecimal integer must be followed by a valid digit.".into(),
                 3,
             ));
         }
@@ -312,33 +431,33 @@ impl Parser for HexIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(TokenType::Literal(LiteralTokenType::Int), index - lexer.index))
+        Ok(lexer.create_token(
+            TokenType::Literal(LiteralTokenType::Int),
+            index - lexer.index,
+        ))
     }
 }
 
 struct BinIntParser;
 
 impl Parser for BinIntParser {
-    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         let mut index = lexer.index;
-        if index == lexer.input.len() - 1 {
-            return Err(lexer.create_parser_lex_error());
-        }
-        if &lexer.input[index..=index + 1] != "0b" && &lexer.input[index..=index + 1] != "0B" {
-            return Err(lexer.create_parser_lex_error());
+        if !matches!(lexer.input.get(index..=index + 1), Some("0b") | Some("0B")) {
+            return Err(LexerError::WrongForm);
         }
         index += 2;
         if index >= lexer.input.len() {
-            return Err(lexer.create_malformed_lex_error_with_len(
-                "Reached EOI while trying to parse binary integer".into(),
+            return Err(lexer.create_lex_error_with_len(
+                "The prefix for a binary integer must be followed by a valid digit.".into(),
                 3,
             ));
         }
         if !matches!(lexer.input.as_bytes()[index], bin_pattern!())
             || lexer.input.as_bytes()[index] == b'_'
         {
-            return Err(lexer.create_malformed_lex_error_with_len(
-                "Binary integers must start with a valid digit".into(),
+            return Err(lexer.create_lex_error_with_len(
+                "The prefix for a binary integer must be followed by a valid digit.".into(),
                 3,
             ));
         }
@@ -352,23 +471,26 @@ impl Parser for BinIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(TokenType::Literal(LiteralTokenType::Int), index - lexer.index))
+        Ok(lexer.create_token(
+            TokenType::Literal(LiteralTokenType::Int),
+            index - lexer.index,
+        ))
     }
 }
 
 struct DecIntParser;
 
 impl Parser for DecIntParser {
-    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         let mut index = lexer.index;
 
         if index >= lexer.input.len() {
-            return Err(lexer.create_parser_lex_error());
+            return Err(LexerError::WrongForm);
         }
         if !matches!(lexer.input.as_bytes()[index], dec_pattern!())
             || lexer.input.as_bytes()[index] == b'_'
         {
-            return Err(lexer.create_parser_lex_error());
+            return Err(LexerError::WrongForm);
         }
         loop {
             let next = lexer.input.as_bytes()[index];
@@ -380,34 +502,84 @@ impl Parser for DecIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(TokenType::Literal(LiteralTokenType::Int), index - lexer.index))
+        Ok(lexer.create_token(
+            TokenType::Literal(LiteralTokenType::Int),
+            index - lexer.index,
+        ))
     }
 }
 
 struct EOIParser;
 impl Parser for EOIParser {
-    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         if lexer.index == lexer.input.len() {
             return Ok(lexer.create_token(TokenType::Eoi, 0));
         }
-        return Err(lexer.create_parser_lex_error());
+        Err(LexerError::WrongForm)
     }
 }
 
 struct WhitespaceParser;
 impl Parser for WhitespaceParser {
-    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         let mut len = 0;
         if !matches!(
             lexer.input.as_bytes()[lexer.index + len],
             whitespace_pattern!(),
         ) {
-            return Err(lexer.create_parser_lex_error());
+            return Err(LexerError::WrongForm);
         }
+        if lexer.first_whitespace == None {
+            lexer.first_whitespace = Some(FirstWhitespace {
+                position: Position {
+                    line_number: lexer.line_number,
+                    column_number: lexer.column_number,
+                    index: lexer.index,
+                },
+                whitespace_type: if lexer.input.as_bytes()[lexer.index + len] == b'\t' {
+                    WhitespaceType::Tab
+                } else {
+                    WhitespaceType::Space
+                },
+            })
+        }
+
+        let first_whitespace = lexer.first_whitespace.unwrap();
         while matches!(
             lexer.input.as_bytes()[lexer.index + len],
             whitespace_pattern!(),
         ) {
+            if first_whitespace.whitespace_type as u8 != lexer.input.as_bytes()[lexer.index + len] {
+                return Err(LexerError::create_errors([
+                    (
+                        first_whitespace.position.line_number,
+                        first_whitespace.position.column_number,
+                        first_whitespace.position.index,
+                        format!(
+                            "This first whitespace character is a {0} character, which implies that the rest of the file uses {0} as its whitespace character.",
+                            first_whitespace.whitespace_type
+                        ),
+                        lexer.input,
+                        1,
+                    ),
+                    (
+                        lexer.line_number,
+                        lexer.column_number + len,
+                        lexer.index + len,
+                        format!(
+                            "But here is a {} character, which is not the same.",
+                            if lexer.input.as_bytes()[lexer.index + len] == b'\t' {
+                                "tab"
+                            } else {
+                                "space"
+                            }
+                        ),
+                        lexer.input,
+                        1,
+                    ),
+                ]));
+            }
+
             len += 1;
             if lexer.index + len >= lexer.input.len() {
                 break;
@@ -423,37 +595,115 @@ struct LineCommentParser {
 }
 
 impl Parser for LineCommentParser {
-    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>>  {
-        if lexer.index + self.prefix.len() > lexer.input.len() {
-            // Not enough input left for our prefix to fit in -> cannot be a line comment.
-            return Err(lexer.create_parser_lex_error());
-        }
-        if &lexer.input[lexer.index..lexer.index+self.prefix.len()] != self.prefix {
-            return Err(lexer.create_parser_lex_error());
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
+        if lexer
+            .input
+            .get(lexer.index..lexer.index + self.prefix.len())
+            != Some(self.prefix)
+        {
+            return Err(LexerError::WrongForm);
         }
         let mut index = self.prefix.len() + lexer.index;
 
         while index < lexer.input.len() {
-            index += 1;
-            if lexer.input.as_bytes()[index] == b'\n' {
+            if index < lexer.input.len() - 1 && &lexer.input[index..=index + 1] == "\r\n" {
+                index += 2;
+                break;
+            }
+            if lexer.input.as_bytes()[index] == b'\n' || lexer.input.as_bytes()[index] == b'\r' {
                 index += 1;
                 break;
             }
+            index += 1;
         }
 
         Ok(lexer.create_token(TokenType::Comment(self.return_type), index - lexer.index))
     }
 }
-fn tag(tag: &'static str, token_type: TokenType) -> TagParser {
-    TagParser { tag, token_type }
+
+struct BlockCommentParser {
+    prefix: &'static str,
+    return_type: CommentTokenType,
 }
+
+impl Parser for BlockCommentParser {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
+        if lexer.index + self.prefix.len() > lexer.input.len() {
+            // Not enough input left for our prefix to fit in -> cannot be a block comment.
+            return Err(LexerError::WrongForm);
+        }
+        if lexer
+            .input
+            .get(lexer.index..lexer.index + self.prefix.len())
+            != Some(self.prefix)
+        {
+            return Err(LexerError::WrongForm);
+        }
+        let mut index = self.prefix.len() + lexer.index;
+
+        while index < lexer.input.len() {
+            if lexer.input.get(index..=index + 1) == Some("*/") {
+                index += 2;
+                break;
+            }
+            index += 1;
+        }
+
+        Ok(lexer.create_token(TokenType::Comment(self.return_type), index - lexer.index))
+    }
+}
+
+fn next_is_newline(input: &str, index: &mut usize, increment_index: bool) -> bool {
+    if input.get(*index..=*index + 1) == Some("\r\n") {
+        if increment_index {
+            *index += 2;
+        }
+        return true;
+    }
+
+    if input.char_at_index(*index) == Some('\r') {
+        if increment_index {
+            *index += 1;
+        }
+        return true;
+    }
+
+    if input.char_at_index(*index) == Some('\n') {
+        if increment_index {
+            *index += 1;
+        }
+        return true;
+    }
+    false
+}
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[repr(u8)]
+enum WhitespaceType {
+    Space = b' ',
+    Tab = b'\t',
+}
+
+impl Display for WhitespaceType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WhitespaceType::Space => write!(f, "space"),
+            WhitespaceType::Tab => write!(f, "tab"),
+        }
+    }
+}
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+struct FirstWhitespace {
+    whitespace_type: WhitespaceType,
+    position: Position,
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct Lexer<'a> {
     line_number: LineNumber,
     column_number: ColumnNumber,
     input: &'a str,
     index: usize,
-    
+    first_whitespace: Option<FirstWhitespace>,
 }
 
 impl<'a> Lexer<'a> {
@@ -463,11 +713,11 @@ impl<'a> Lexer<'a> {
             column_number: 0,
             input,
             index: 0,
+            first_whitespace: None,
         }
     }
 
     pub(crate) fn collect_tokens(&mut self) -> LexerResult<Vec<Token>> {
-        let this = self as *mut Self;
         let mut res = vec![];
         loop {
             let next = self.yield_token()?;
@@ -500,32 +750,82 @@ impl<'a> Lexer<'a> {
             contents,
         }
     }
-
     fn calculate_offset(&mut self, offset: usize) -> Position {
-        let mut line_number = self.line_number;
         let mut column_number = self.column_number;
+        let mut line_number = self.line_number;
         let mut index = self.index;
-        for i in self.index..(self.index + offset - 1) {
-            index += 1;
-            let c = &self.input[i..=i];
-            if c == "\n" {
-                column_number = 0;
-                line_number += 1;
-            } else {
-                column_number += 1;
+        match offset {
+            0 => (),
+            1 => {
+                let c = self.input.as_bytes()[index];
+                if c == b'\r' || c == b'\n' {
+                    self.column_number = 0;
+                    self.line_number += 1;
+                } else {
+                    self.column_number += 1;
+                }
+                self.index += 1;
+            }
+            _ => {
+                while index < self.index + offset - 2 {
+                    if next_is_newline(self.input, &mut index, true) {
+                        column_number = 0;
+                        line_number += 1;
+                    } else {
+                        column_number += 1;
+                        let n = self.input.char_at_index(index).unwrap().len_utf8();
+                        index += n;
+                    }
+                }
+
+                // Special case if there is only one byte left.
+                if index == self.index + offset - 1 {
+                    self.index = index + 1;
+                    self.line_number = line_number;
+                    self.column_number = column_number;
+                    let c = self.input.as_bytes()[index];
+                    if c == b'\r' || c == b'\n' {
+                        self.line_number += 1;
+                        self.column_number = 0;
+                    } else {
+                        self.column_number += 1;
+                    }
+                    return Position {
+                        index,
+                        line_number,
+                        column_number,
+                    };
+                }
+                self.line_number = line_number;
+                self.column_number = column_number;
+                self.index = index;
+                // Handle last two bytes.
+                self.index += 2;
+                let s = &self.input.as_bytes()[index..=index + 1];
+                index += 1;
+                if s == b"\r\n" {
+                    self.column_number = 0;
+                    self.line_number += 1;
+                    column_number += 1;
+                } else {
+                    if s[0] == b'\r' || s[0] == b'\n' {
+                        line_number += 1;
+                        column_number = 0;
+                    } else {
+                        column_number += 1;
+                    }
+                    for &b in s.iter() {
+                        if b == b'\n' || b == b'\r' {
+                            self.line_number += 1;
+                            self.column_number = 0;
+                        } else {
+                            self.column_number += 1;
+                        }
+                    }
+                }
             }
         }
-        let last = &self.input[self.index + offset - 1..=self.index + offset - 1];
 
-        self.line_number = line_number;
-        self.column_number = column_number;
-        self.index = index + 1;
-        if last == "\n" {
-            self.column_number = 0;
-            self.line_number += 1;
-        } else {
-            self.column_number += 1;
-        }
         Position {
             index,
             line_number,
@@ -535,135 +835,121 @@ impl<'a> Lexer<'a> {
     fn yield_token(&mut self) -> LexerResult<'a, Token<'a>> {
         use OperatorTokenType::*;
         use TokenType::*;
-        
-        counted_array!(lazy_static PARSERS: [Box<dyn Parser>; _] = [EOIParser.boxed(),
-            HexIntParser.boxed(),
-            BinIntParser.boxed(),
-            DecIntParser.boxed(),
-            LineCommentParser {prefix: "///", return_type: CommentTokenType::DocsLine}.boxed(),
-            LineCommentParser {prefix: "//", return_type: CommentTokenType::Line}.boxed(),
-            tag(";", Operator(Terminator)).boxed(),
-            tag("\r\n", Operator(Terminator)).boxed(),
-            tag("\r", Operator(Terminator)).boxed(),
-            tag("\n", Operator(Terminator)).boxed(),
-            tag("<<=", Operator(BitShiftLeftAssign)).boxed(),
-            tag("<<", Operator(BitShiftLeft)).boxed(),
-            tag(">>=", Operator(BitShiftRightAssign)).boxed(),
-            tag(">>", Operator(BitShiftRight)).boxed(),
-            tag("&=", Operator(BitwiseAndAssign)).boxed(),
-            tag("&", Operator(BitwiseAnd)).boxed(),
-            tag("|=", Operator(BitwiseOrAssign)).boxed(),
-            tag("|", Operator(BitwiseOr)).boxed(),
-            tag("~=", Operator(BitwiseNotAssign)).boxed(),
-            tag("~", Operator(BitwiseNot)).boxed(),
-            tag("^=", Operator(BitwiseXorAssign)).boxed(),
-            tag("^", Operator(BitwiseXor)).boxed(),
 
-            tag("!=", Operator(NotEquals)).boxed(),
-            tag("==", Operator(Equals)).boxed(),
-            tag(">=", Operator(GreaterThanEquals)).boxed(),
-            tag("<=", Operator(LessThanEquals)).boxed(),
-            tag(">", Operator(GreaterThan)).boxed(),
-            tag("<", Operator(LessThan)).boxed(),
-            tag("(", Operator(LParen)).boxed(),
-            tag(")", Operator(RParen)).boxed(),
+        counted_array!(lazy_static PARSERS: [Box<dyn Parser>; _] = [
+        EOIParser.boxed(),
+        StringParser.boxed(),
 
-            tag("/=", Operator(DivideAssign)).boxed(),
-            tag("*=", Operator(MultiplyAssign)).boxed(),
-            tag("+=", Operator(PlusAssign)).boxed(),
-            tag("-=", Operator(MinusAssign)).boxed(),
-            tag("/", Operator(Divide)).boxed(),
-            tag("*", Operator(Multiply)).boxed(),
-            tag("+", Operator(Plus)).boxed(),
-            tag("-", Operator(Minus)).boxed(),
-            tag("=", Operator(Assign)).boxed(),
-            tag(",", Operator(Comma)).boxed(),
+        HexIntParser.boxed(),
+        BinIntParser.boxed(),
+        DecIntParser.boxed(),
 
-            tag("[", Operator(LSquare)).boxed(),
-            tag("]", Operator(RSquare)).boxed(),
-            
-            WhitespaceParser.boxed()]);
+
+        LineCommentParser {prefix: "///", return_type: CommentTokenType::DocsLine}.boxed(),
+        LineCommentParser {prefix: "//", return_type: CommentTokenType::Line}.boxed(),
+
+        BlockCommentParser {prefix: "/**", return_type: CommentTokenType::DocsBlock}.boxed(),
+        BlockCommentParser {prefix : "/*", return_type: CommentTokenType::Block}.boxed(),
+
+        tag(";", Operator(Terminator)).boxed(),
+        tag("\r\n", Operator(Terminator)).boxed(),
+        tag("\r", Operator(Terminator)).boxed(),
+        tag("\n", Operator(Terminator)).boxed(),
+
+        tag("<<=", Operator(BitShiftLeftAssign)).boxed(),
+        tag("<<", Operator(BitShiftLeft)).boxed(),
+        tag(">>=", Operator(BitShiftRightAssign)).boxed(),
+        tag(">>", Operator(BitShiftRight)).boxed(),
+        tag("&=", Operator(BitwiseAndAssign)).boxed(),
+        tag("&", Operator(BitwiseAnd)).boxed(),
+        tag("|=", Operator(BitwiseOrAssign)).boxed(),
+        tag("|", Operator(BitwiseOr)).boxed(),
+        tag("~=", Operator(BitwiseNotAssign)).boxed(),
+        tag("~", Operator(BitwiseNot)).boxed(),
+        tag("^=", Operator(BitwiseXorAssign)).boxed(),
+        tag("^", Operator(BitwiseXor)).boxed(),
+
+        tag("!=", Operator(NotEquals)).boxed(),
+        tag("==", Operator(Equals)).boxed(),
+        tag(">=", Operator(GreaterThanEquals)).boxed(),
+        tag("<=", Operator(LessThanEquals)).boxed(),
+        tag(">", Operator(GreaterThan)).boxed(),
+        tag("<", Operator(LessThan)).boxed(),
+
+        tag("(", Operator(LParen)).boxed(),
+        tag(")", Operator(RParen)).boxed(),
+        tag("[", Operator(LSquare)).boxed(),
+        tag("]", Operator(RSquare)).boxed(),
+        tag(",", Operator(Comma)).boxed(),
+
+        tag("/=", Operator(DivideAssign)).boxed(),
+        tag("*=", Operator(MultiplyAssign)).boxed(),
+        tag("+=", Operator(PlusAssign)).boxed(),
+        tag("-=", Operator(MinusAssign)).boxed(),
+        tag("/", Operator(Divide)).boxed(),
+        tag("*", Operator(Multiply)).boxed(),
+        tag("+", Operator(Plus)).boxed(),
+        tag("-", Operator(Minus)).boxed(),
+        tag("=", Operator(Assign)).boxed(),
+
+
+
+        WhitespaceParser.boxed(),
+        IdentifierParser.boxed(),
+        ]);
         if self.index > self.input.len() {
             self.index = self.input.len() - 1;
-            return Err(
-                self.create_unknown_lex_error("Lexer has ran past the end of the input".into())
-            );
+            return Err(self.create_lex_error("Lexer has ran past the end of the input".into()));
         }
         for (_i, parser) in PARSERS.iter().remove_last().enumerate() {
             let res = parser.parse(self);
 
             match res {
-                Err(e) => match e.error_type {
-                    LexerErrorType::Malformed => return Err(e),
-                    LexerErrorType::Unknown => continue,
+                Err(e) => match e {
+                    LexerError::Incorrect(_) => return Err(e),
+                    LexerError::WrongForm => continue,
                 },
                 Ok(v) => return Ok(v),
             }
         }
         let res = PARSERS[PARSERS.len() - 1].parse(self);
         return match res {
-            Err(_) => Err(
-                self.create_unknown_lex_error_with_len(
+            Err(e) => match e {
+                LexerError::WrongForm => Err(self.create_lex_error_with_len(
                     format!(
                         "Unknown Token starting with '{}'!",
                         &self.input[self.index..=self.index]
                     ),
-                    self.distance_to_whitespace(),
-                )
-            ),
+                    1,
+                )),
+                LexerError::Incorrect(_) => Err(e),
+            },
             Ok(v) => Ok(v),
         };
     }
 
-    fn distance_to_whitespace(&self) -> usize {
-        let mut index = self.index;
-        while index < self.input.len()
-            && !matches!(self.input.as_bytes()[index], whitespace_pattern!())
-        {
-            index += 1;
-        }
-
-        index - self.index
-    }
-    fn create_parser_lex_error(&self) -> LexerError<'a> {
-        self.create_lex_error_base(String::new(), LexerErrorType::Unknown, 1)
+    fn create_lex_error(&self, message: String) -> LexerError<'a> {
+        self.create_lex_error_with_len(message, 1)
     }
 
-    fn create_unknown_lex_error(&self, message: String) -> LexerError<'a> {
-        self.create_lex_error_base(message, LexerErrorType::Unknown, 1)
-    }
-
-    fn create_unknown_lex_error_with_len(&self, message: String, len: usize) -> LexerError<'a> {
-        self.create_lex_error_base(message, LexerErrorType::Unknown, len)
-    }
-
-    fn create_lex_error_base(
-        &self,
-        message: String,
-        error_type: LexerErrorType,
-        len: usize,
-    ) -> LexerError<'a> {
-        LexerError::from(
+    fn create_lex_error_with_len(&self, message: String, len: usize) -> LexerError<'a> {
+        LexerError::with_contents(
             self.line_number,
             self.column_number,
             self.index,
             message,
             self.input,
-            error_type,
             len,
         )
-    }
-
-    fn create_malformed_lex_error_with_len(&self, message: String, len: usize) -> LexerError<'a> {
-        self.create_lex_error_base(message, LexerErrorType::Malformed, len)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::lex::{LexerError, OperatorTokenType, Position, Token, TokenType, LiteralTokenType};
-
-    use super::Lexer;
+    use super::CommentTokenType::*;
+    use super::LiteralTokenType::*;
+    use super::OperatorTokenType::*;
+    use super::*;
     #[test]
     fn test_lexer_1() {
         pretty_assertions::assert_eq!(
@@ -763,15 +1049,14 @@ mod tests {
     fn test_lexer_2() {
         pretty_assertions::assert_eq!(
             Lexer::new("0x").collect_tokens(),
-            Err(LexerError {
-                error_message: "Reached EOI while trying to parse hexadecimal integer".into(),
-                index: 0,
-                line_number: 0,
-                column_number: 0,
-                input: "0x",
-                error_type: crate::lexer::lex::LexerErrorType::Malformed,
-                len: 3,
-            })
+            Err(LexerError::with_contents(
+                0,
+                0,
+                0,
+                "The prefix for a hexadecimal integer must be followed by a valid digit.".into(),
+                "0x",
+                3,
+            ))
         );
     }
 
@@ -779,19 +1064,117 @@ mod tests {
     fn test_lexer_3() {
         pretty_assertions::assert_eq!(
             Lexer::new("0xh").collect_tokens(),
-            Err(LexerError {
-                error_message: "Hexadecimal integers must start with a valid digit".into(),
-                index: 0,
-                line_number: 0,
-                column_number: 0,
-                input: "0xh",
-                error_type: crate::lexer::lex::LexerErrorType::Malformed,
-                len: 3,
-            })
+            Err(LexerError::with_contents(
+                0,
+                0,
+                0,
+                "The prefix for a hexadecimal integer must be followed by a valid digit.".into(),
+                "0xh",
+                3,
+            ))
         );
     }
     #[test]
     fn test_lexer_4() {
+        pretty_assertions::assert_eq!(
+            Lexer::new("1\r\n2\r\n3").collect_tokens().unwrap(),
+            vec![
+                Token {
+                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 0,
+                        index: 0,
+                    },
+                    len: 1,
+                    end: Position {
+                        line_number: 0,
+                        column_number: 0,
+                        index: 0,
+                    },
+                    contents: "1",
+                },
+                Token {
+                    token_type: TokenType::Operator(Terminator),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 1,
+                        index: 1,
+                    },
+                    len: 2,
+                    end: Position {
+                        line_number: 0,
+                        column_number: 2,
+                        index: 2,
+                    },
+                    contents: "\r\n",
+                },
+                Token {
+                    token_type: TokenType::Literal(Int),
+                    start: Position {
+                        line_number: 1,
+                        column_number: 0,
+                        index: 3,
+                    },
+                    len: 1,
+                    end: Position {
+                        line_number: 1,
+                        column_number: 0,
+                        index: 3,
+                    },
+                    contents: "2",
+                },
+                Token {
+                    token_type: TokenType::Operator(Terminator),
+                    start: Position {
+                        line_number: 1,
+                        column_number: 1,
+                        index: 4,
+                    },
+                    len: 2,
+                    end: Position {
+                        line_number: 1,
+                        column_number: 2,
+                        index: 5,
+                    },
+                    contents: "\r\n",
+                },
+                Token {
+                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    start: Position {
+                        line_number: 2,
+                        column_number: 0,
+                        index: 6,
+                    },
+                    len: 1,
+                    end: Position {
+                        line_number: 2,
+                        column_number: 0,
+                        index: 6,
+                    },
+                    contents: "3",
+                },
+                Token {
+                    token_type: TokenType::Eoi,
+                    start: Position {
+                        line_number: 2,
+                        column_number: 1,
+                        index: 7
+                    },
+                    end: Position {
+                        line_number: 2,
+                        column_number: 1,
+                        index: 7
+                    },
+                    len: 0,
+                    contents: "",
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_lexer_5() {
         pretty_assertions::assert_eq!(
             Lexer::new("1\n2\n3").collect_tokens().unwrap(),
             vec![
@@ -811,7 +1194,7 @@ mod tests {
                     contents: "1",
                 },
                 Token {
-                    token_type: TokenType::Whitespace,
+                    token_type: TokenType::Operator(Terminator),
                     start: Position {
                         line_number: 0,
                         column_number: 1,
@@ -826,7 +1209,7 @@ mod tests {
                     contents: "\n",
                 },
                 Token {
-                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    token_type: TokenType::Literal(Int),
                     start: Position {
                         line_number: 1,
                         column_number: 0,
@@ -841,7 +1224,7 @@ mod tests {
                     contents: "2",
                 },
                 Token {
-                    token_type: TokenType::Whitespace,
+                    token_type: TokenType::Operator(Terminator),
                     start: Position {
                         line_number: 1,
                         column_number: 1,
@@ -887,5 +1270,166 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn test_lexer_6() {
+        pretty_assertions::assert_eq!(
+            Lexer::new("/*\r\n\r\n\r\nI am comment!\r\n*/123/*I am second comment!\r\n*/;;")
+                .collect_tokens()
+                .unwrap(),
+            vec![
+                Token {
+                    token_type: TokenType::Comment(Block),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 0,
+                        index: 0,
+                    },
+                    len: 25,
+                    end: Position {
+                        line_number: 4,
+                        column_number: 1,
+                        index: 24,
+                    },
+                    contents: "/*\r\n\r\n\r\nI am comment!\r\n*/",
+                },
+                Token {
+                    token_type: TokenType::Literal(Int),
+                    start: Position {
+                        line_number: 4,
+                        column_number: 2,
+                        index: 25,
+                    },
+                    len: 3,
+                    end: Position {
+                        line_number: 4,
+                        column_number: 4,
+                        index: 27,
+                    },
+                    contents: "123",
+                },
+                Token {
+                    token_type: TokenType::Comment(Block),
+                    start: Position {
+                        line_number: 4,
+                        column_number: 5,
+                        index: 28,
+                    },
+                    len: 26,
+                    end: Position {
+                        line_number: 5,
+                        column_number: 1,
+                        index: 53,
+                    },
+                    contents: "/*I am second comment!\r\n*/",
+                },
+                Token {
+                    token_type: TokenType::Operator(Terminator),
+                    start: Position {
+                        line_number: 5,
+                        column_number: 2,
+                        index: 54,
+                    },
+                    len: 1,
+                    end: Position {
+                        line_number: 5,
+                        column_number: 2,
+                        index: 54,
+                    },
+                    contents: ";",
+                },
+                Token {
+                    token_type: TokenType::Operator(Terminator),
+                    start: Position {
+                        line_number: 5,
+                        column_number: 3,
+                        index: 55,
+                    },
+                    len: 1,
+                    end: Position {
+                        line_number: 5,
+                        column_number: 3,
+                        index: 55,
+                    },
+                    contents: ";",
+                },
+                Token {
+                    token_type: TokenType::Eoi,
+                    start: Position {
+                        line_number: 5,
+                        column_number: 4,
+                        index: 56
+                    },
+                    end: Position {
+                        line_number: 5,
+                        column_number: 4,
+                        index: 56
+                    },
+                    len: 0,
+                    contents: "",
+                }
+            ]
+        );
+    }
+    #[test]
+    fn test_lexer_7() {
+        pretty_assertions::assert_eq!(
+            Lexer::new("'äääää'").collect_tokens().unwrap(),
+            vec![
+                Token {
+                    token_type: TokenType::Literal(String),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 0,
+                        index: 0
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 6,
+                        index: 11
+                    },
+                    len: 12,
+                    contents: "'äääää'"
+                },
+                Token {
+                    token_type: TokenType::Eoi,
+                    start: Position {
+                        line_number: 0,
+                        column_number: 7,
+                        index: 12
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 7,
+                        index: 12
+                    },
+                    len: 0,
+                    contents: "",
+                }
+            ]
+        )
+    }
+    #[test]
+    fn test_lexer_8() {
+        pretty_assertions::assert_eq!(
+            Lexer::new("\t ").collect_tokens().unwrap_err(),
+            LexerError::create_errors([(
+                0,
+                0,
+                0,
+                "This first whitespace character is a tab character, which implies that the rest of the file uses tab as its whitespace character.".into(),
+                "\t ",
+                1
+            ),
+            (
+                0,
+                1,
+                1,
+                "But here is a space character, which is not the same.".into(),
+                "\t ",
+                1
+            )])
+        )
     }
 }

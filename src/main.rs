@@ -3,12 +3,13 @@ mod parser;
 
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::eyre;
-use termcolor::{StandardStream, ColorChoice, Color, ColorSpec, WriteColor};
 use std::fs::read_to_string;
 use std::io::{stdin, Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
+const TEST_PROGRAM: &str = "\t ";
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
@@ -19,6 +20,9 @@ struct Cli {
 enum Commands {
     #[clap(alias = "l")]
     Lex(Lex),
+
+    #[clap(alias = "lt")]
+    LexTestProgram,
 }
 #[derive(Args, Debug)]
 struct Lex {
@@ -33,12 +37,13 @@ fn main() {
     match run() {
         Ok(()) => (),
         Err(e) => {
-            
             let mut stdout = StandardStream::stdout(ColorChoice::Always);
-            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
+            stdout
+                .set_color(ColorSpec::new().set_fg(Some(Color::Red)))
+                .unwrap();
+            writeln!(&mut stdout, "Lexer Error!").unwrap();
+            writeln!(&mut stdout, "------------").unwrap();
             writeln!(&mut stdout, "{e}").unwrap();
-            writeln!(&mut stdout, "Press enter to exit.\n").unwrap();
-            let _ = stdin().read(&mut []);
             exit(69);
         }
     }
@@ -69,6 +74,14 @@ fn run() -> color_eyre::Result<()> {
                 }
             };
             let mut lexer = lexer::lex::Lexer::new(&contents);
+            let tokens = lexer.collect_tokens();
+            match tokens {
+                Ok(v) => println!("{v:#?}"),
+                Err(e) => return Err(eyre!(format!("{e}"))),
+            }
+        }
+        Commands::LexTestProgram => {
+            let mut lexer = lexer::lex::Lexer::new(TEST_PROGRAM);
             let tokens = lexer.collect_tokens();
             match tokens {
                 Ok(v) => println!("{v:#?}"),
