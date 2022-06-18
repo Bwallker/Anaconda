@@ -67,99 +67,486 @@ macro_rules! whitespace_pattern {
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub enum TokenType {
+pub(crate) enum TokenType {
     Eoi,
     Comment(CommentTokenType),
     Operator(OperatorTokenType),
     Literal(LiteralTokenType),
     Whitespace,
+    Identifier,
+    Keyword(KeywordTokenType),
+}
+
+pub(crate) fn eoi() -> TokenType {
+    TokenType::Eoi
+}
+
+pub(crate) fn identifier() -> TokenType {
+    TokenType::Identifier
+}
+
+pub(crate) fn white_space() -> TokenType {
+    TokenType::Whitespace
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub enum LiteralTokenType {
+pub(crate) enum LiteralTokenType {
     Int,
     Decimal,
     String,
-    Identifier,
+}
+
+pub(crate) fn int() -> TokenType {
+    TokenType::Literal(LiteralTokenType::Int)
+}
+
+pub(crate) fn string() -> TokenType {
+    TokenType::Literal(LiteralTokenType::String)
+}
+
+pub(crate) fn decimal() -> TokenType {
+    TokenType::Literal(LiteralTokenType::Decimal)
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub enum CommentTokenType {
+pub(crate) enum CommentTokenType {
     Line,
     Block,
     DocsLine,
     DocsBlock,
 }
+pub(crate) fn line_comment() -> TokenType {
+    TokenType::Comment(CommentTokenType::Line)
+}
+
+pub(crate) fn block_comment() -> TokenType {
+    TokenType::Comment(CommentTokenType::Block)
+}
+
+pub(crate) fn docs_line_comment() -> TokenType {
+    TokenType::Comment(CommentTokenType::DocsLine)
+}
+
+pub(crate) fn docs_block_comment() -> TokenType {
+    TokenType::Comment(CommentTokenType::DocsBlock)
+}
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub enum OperatorTokenType {
-    // Arithmetic.
-    Plus,
+pub(crate) enum KeywordTokenType {
+    BooleanComparison(BooleanComparisonKeywordTokenType),
+    If(IfKeywordTokenType),
+    Not(NotKeywordTokenType),
+    Statement(StatementKeywordTokenType),
+    FunctionDefinition(FunctionDefinitionKeywordTokenType),
+    Loop(LoopKeywordTokenType),
+}
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum BooleanComparisonKeywordTokenType {
+    And,
+    Or,
+}
+
+pub(crate) fn and() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::BooleanComparison(
+        BooleanComparisonKeywordTokenType::And,
+    ))
+}
+
+pub(crate) fn or() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::BooleanComparison(
+        BooleanComparisonKeywordTokenType::Or,
+    ))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum IfKeywordTokenType {
+    If,
+    Elif,
+    Else,
+}
+
+pub(crate) fn if_() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::If(IfKeywordTokenType::If))
+}
+
+pub(crate) fn elif() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::If(IfKeywordTokenType::Elif))
+}
+
+pub(crate) fn else_() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::If(IfKeywordTokenType::Else))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum NotKeywordTokenType {
+    Not,
+}
+
+pub(crate) fn not() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::Not(NotKeywordTokenType::Not))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum StatementKeywordTokenType {
+    Continue,
+    Break,
+    Return,
+}
+
+pub(crate) fn continue_() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::Statement(
+        StatementKeywordTokenType::Continue,
+    ))
+}
+
+pub(crate) fn break_() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::Statement(
+        StatementKeywordTokenType::Break,
+    ))
+}
+
+pub(crate) fn return_() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::Statement(
+        StatementKeywordTokenType::Return,
+    ))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum FunctionDefinitionKeywordTokenType {
+    Fun,
+}
+
+pub(crate) fn fun() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::FunctionDefinition(
+        FunctionDefinitionKeywordTokenType::Fun,
+    ))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum LoopKeywordTokenType {
+    Loop,
+}
+
+pub(crate) fn loop_() -> TokenType {
+    TokenType::Keyword(KeywordTokenType::Loop(LoopKeywordTokenType::Loop))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+
+pub(crate) enum AssignmentOperatorTokenType {
+    Assign,
     PlusAssign,
-    Minus,
     MinusAssign,
-    Multiply,
-    MultiplyAssign,
-    Divide,
-    DivideAssign,
-    BitShiftLeft,
+    StarAssign,
+    SlashAssign,
     BitShiftLeftAssign,
-    BitShiftRight,
     BitShiftRightAssign,
-    BitwiseAnd,
     BitwiseAndAssign,
-    BitwiseOr,
     BitwiseOrAssign,
-    BitwiseXor,
     BitwiseXorAssign,
-    BitwiseNot,
     BitwiseNotAssign,
-    // Boolean.
+}
+
+pub(crate) fn assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::Assign,
+    ))
+}
+
+pub(crate) fn plus_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::PlusAssign,
+    ))
+}
+
+pub(crate) fn minus_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::MinusAssign,
+    ))
+}
+
+pub(crate) fn star_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::StarAssign,
+    ))
+}
+
+pub(crate) fn slash_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::SlashAssign,
+    ))
+}
+
+pub(crate) fn shl_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::BitShiftLeftAssign,
+    ))
+}
+
+pub(crate) fn shr_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::BitShiftRightAssign,
+    ))
+}
+
+pub(crate) fn bitwise_and_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::BitwiseAndAssign,
+    ))
+}
+
+pub(crate) fn bitwise_or_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::BitwiseOrAssign,
+    ))
+}
+
+pub(crate) fn bitwise_xor_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::BitwiseXorAssign,
+    ))
+}
+
+pub(crate) fn bitwise_not_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::BitwiseNotAssign,
+    ))
+}
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum ArithmeticOperatorTokenType {
+    Unary(UnaryOperatorTokenType),
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+    BitwiseNot,
+}
+
+pub(crate) fn bitwise_not() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Arithmetic(
+        ArithmeticOperatorTokenType::BitwiseNot,
+    ))
+}
+
+pub(crate) fn bitwise_xor() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Arithmetic(
+        ArithmeticOperatorTokenType::BitwiseXor,
+    ))
+}
+
+pub(crate) fn bitwise_or() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Arithmetic(
+        ArithmeticOperatorTokenType::BitwiseOr,
+    ))
+}
+
+pub(crate) fn bitwise_and() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Arithmetic(
+        ArithmeticOperatorTokenType::BitwiseAnd,
+    ))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+
+pub(crate) enum UnaryOperatorTokenType {
+    Plus,
+    Minus,
+}
+
+pub(crate) fn plus() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Arithmetic(
+        ArithmeticOperatorTokenType::Unary(UnaryOperatorTokenType::Plus),
+    ))
+}
+
+pub(crate) fn minus() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Arithmetic(
+        ArithmeticOperatorTokenType::Unary(UnaryOperatorTokenType::Minus),
+    ))
+}
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum TermOperatorTokenType {
+    Star,
+    Slash,
+    BitShiftLeft,
+    BitShiftRight,
+}
+
+pub(crate) fn star() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::Star))
+}
+
+pub(crate) fn slash() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::Slash))
+}
+
+pub(crate) fn shl() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::BitShiftLeft))
+}
+
+pub(crate) fn shr() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Term(
+        TermOperatorTokenType::BitShiftRight,
+    ))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum ComparisonOperatorTokenType {
     Equals,
     NotEquals,
     LessThan,
     GreaterThan,
     LessThanEquals,
     GreaterThanEquals,
-    // Structural.
-    Comma,
+}
+
+pub(crate) fn equals() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Comparison(
+        ComparisonOperatorTokenType::Equals,
+    ))
+}
+
+pub(crate) fn not_equals() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Comparison(
+        ComparisonOperatorTokenType::NotEquals,
+    ))
+}
+
+pub(crate) fn less_than() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Comparison(
+        ComparisonOperatorTokenType::LessThan,
+    ))
+}
+
+pub(crate) fn greater_than() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Comparison(
+        ComparisonOperatorTokenType::GreaterThan,
+    ))
+}
+
+pub(crate) fn greater_than_equals() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Comparison(
+        ComparisonOperatorTokenType::GreaterThanEquals,
+    ))
+}
+
+pub(crate) fn less_than_equals() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Comparison(
+        ComparisonOperatorTokenType::LessThanEquals,
+    ))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum LParenOperatorTokenType {
     LParen,
+}
+
+pub(crate) fn l_paren() -> TokenType {
+    TokenType::Operator(OperatorTokenType::LParen(LParenOperatorTokenType::LParen))
+}
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum RParenOperatorTokenType {
     RParen,
-    LSquare,
+}
+
+pub(crate) fn r_paren() -> TokenType {
+    TokenType::Operator(OperatorTokenType::RParen(RParenOperatorTokenType::RParen))
+}
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum RSquareOperatorTokenType {
     RSquare,
-    Assign,
+}
+
+pub(crate) fn r_square() -> TokenType {
+    TokenType::Operator(OperatorTokenType::RSquare(
+        RSquareOperatorTokenType::RSquare,
+    ))
+}
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum LSquareOperatorTokenType {
+    LSquare,
+}
+
+pub(crate) fn l_square() -> TokenType {
+    TokenType::Operator(OperatorTokenType::LSquare(
+        LSquareOperatorTokenType::LSquare,
+    ))
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum TerminatorOperatorTokenType {
     Terminator,
 }
 
+pub(crate) fn terminator() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Terminator(
+        TerminatorOperatorTokenType::Terminator,
+    ))
+}
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub struct Position {
-    line_number: LineNumber,
-    column_number: ColumnNumber,
-    index: usize,
+pub(crate) enum CommaOperatorTokenType {
+    Comma,
+}
+
+pub(crate) fn comma() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Comma(CommaOperatorTokenType::Comma))
+}
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+
+pub(crate) enum ColonOperatorTokenType {
+    Colon,
+}
+
+pub(crate) fn colon() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Colon(ColonOperatorTokenType::Colon))
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub struct Token<'a> {
-    contents: &'a str,
-    start: Position,
-    len: usize,
-    end: Position,
-    token_type: TokenType,
+pub(crate) enum OperatorTokenType {
+    Assignment(AssignmentOperatorTokenType),
+    Arithmetic(ArithmeticOperatorTokenType),
+    Comparison(ComparisonOperatorTokenType),
+    Term(TermOperatorTokenType),
+    // Structural.
+    Comma(CommaOperatorTokenType),
+    LParen(LParenOperatorTokenType),
+    RParen(RParenOperatorTokenType),
+    LSquare(LSquareOperatorTokenType),
+    RSquare(RSquareOperatorTokenType),
+    Terminator(TerminatorOperatorTokenType),
+    Colon(ColonOperatorTokenType),
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) struct Position {
+    pub(crate) line_number: LineNumber,
+    pub(crate) column_number: ColumnNumber,
+    pub(crate) index: usize,
+}
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) struct Token<'a> {
+    pub(crate) contents: &'a str,
+    pub(crate) start: Position,
+    pub(crate) len: usize,
+    pub(crate) end: Position,
+    pub(crate) token_type: TokenType,
 }
 
 type LineNumber = usize;
 type ColumnNumber = usize;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub enum LexerError<'a> {
+pub(crate) enum LexerError<'a> {
     /// The next token is obviously syntactically invalid.
     Incorrect(Vec<LexerErrorContents<'a>>),
     /// The next token is of the wrong form for this parser, and may still be valid for another parser.
     WrongForm,
 }
 
+impl<'a> std::error::Error for LexerError<'a> {}
+
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub struct LexerErrorContents<'a> {
+pub(crate) struct LexerErrorContents<'a> {
     line_number: LineNumber,
     column_number: ColumnNumber,
     index: usize,
@@ -353,10 +740,7 @@ impl Parser for StringParser {
             index += 1;
         }
 
-        Ok(lexer.create_token(
-            TokenType::Literal(LiteralTokenType::String),
-            index - lexer.index,
-        ))
+        Ok(lexer.create_token(string(), index - lexer.index))
     }
 }
 
@@ -392,10 +776,7 @@ impl Parser for IdentifierParser {
             index += next.len_utf8();
         }
 
-        Ok(lexer.create_token(
-            TokenType::Literal(LiteralTokenType::Identifier),
-            index - lexer.index,
-        ))
+        Ok(lexer.create_token(identifier(), index - lexer.index))
     }
 }
 struct HexIntParser;
@@ -431,10 +812,7 @@ impl Parser for HexIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(
-            TokenType::Literal(LiteralTokenType::Int),
-            index - lexer.index,
-        ))
+        Ok(lexer.create_token(int(), index - lexer.index))
     }
 }
 
@@ -471,10 +849,7 @@ impl Parser for BinIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(
-            TokenType::Literal(LiteralTokenType::Int),
-            index - lexer.index,
-        ))
+        Ok(lexer.create_token(int(), index - lexer.index))
     }
 }
 
@@ -502,10 +877,7 @@ impl Parser for DecIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(
-            TokenType::Literal(LiteralTokenType::Int),
-            index - lexer.index,
-        ))
+        Ok(lexer.create_token(int(), index - lexer.index))
     }
 }
 
@@ -513,7 +885,7 @@ struct EOIParser;
 impl Parser for EOIParser {
     fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         if lexer.index == lexer.input.len() {
-            return Ok(lexer.create_token(TokenType::Eoi, 0));
+            return Ok(lexer.create_token(eoi(), 0));
         }
         Err(LexerError::WrongForm)
     }
@@ -585,13 +957,13 @@ impl Parser for WhitespaceParser {
                 break;
             }
         }
-        Ok(lexer.create_token(TokenType::Whitespace, len))
+        Ok(lexer.create_token(white_space(), len))
     }
 }
 
 struct LineCommentParser {
     prefix: &'static str,
-    return_type: CommentTokenType,
+    return_type: TokenType,
 }
 
 impl Parser for LineCommentParser {
@@ -617,13 +989,13 @@ impl Parser for LineCommentParser {
             index += 1;
         }
 
-        Ok(lexer.create_token(TokenType::Comment(self.return_type), index - lexer.index))
+        Ok(lexer.create_token(self.return_type, index - lexer.index))
     }
 }
 
 struct BlockCommentParser {
     prefix: &'static str,
-    return_type: CommentTokenType,
+    return_type: TokenType,
 }
 
 impl Parser for BlockCommentParser {
@@ -649,7 +1021,7 @@ impl Parser for BlockCommentParser {
             index += 1;
         }
 
-        Ok(lexer.create_token(TokenType::Comment(self.return_type), index - lexer.index))
+        Ok(lexer.create_token(self.return_type, index - lexer.index))
     }
 }
 
@@ -676,6 +1048,25 @@ fn next_is_newline(input: &str, index: &mut usize, increment_index: bool) -> boo
     }
     false
 }
+
+struct KeywordParser {
+    tag: &'static str,
+    keyword_type: TokenType,
+}
+
+impl Parser for KeywordParser {
+    fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
+        let mut res = IdentifierParser.parse(lexer)?;
+        if res.contents == self.tag {
+            res.token_type = self.keyword_type;
+        }
+        Ok(res)
+    }
+}
+
+fn keyword(tag: &'static str, keyword_type: TokenType) -> KeywordParser {
+    KeywordParser { tag, keyword_type }
+}
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 #[repr(u8)]
 enum WhitespaceType {
@@ -698,7 +1089,7 @@ struct FirstWhitespace {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct Lexer<'a> {
+pub(crate) struct Lexer<'a> {
     line_number: LineNumber,
     column_number: ColumnNumber,
     input: &'a str,
@@ -717,7 +1108,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub(crate) fn collect_tokens(&mut self) -> LexerResult<Vec<Token>> {
+    pub(crate) fn collect_tokens(&mut self) -> LexerResult<Vec<Token<'a>>> {
         let mut res = vec![];
         loop {
             let next = self.yield_token()?;
@@ -832,10 +1223,7 @@ impl<'a> Lexer<'a> {
             column_number,
         }
     }
-    fn yield_token(&mut self) -> LexerResult<'a, Token<'a>> {
-        use OperatorTokenType::*;
-        use TokenType::*;
-
+    pub(crate) fn yield_token(&mut self) -> LexerResult<'a, Token<'a>> {
         counted_array!(lazy_static PARSERS: [Box<dyn Parser>; _] = [
         EOIParser.boxed(),
         StringParser.boxed(),
@@ -845,56 +1233,76 @@ impl<'a> Lexer<'a> {
         DecIntParser.boxed(),
 
 
-        LineCommentParser {prefix: "///", return_type: CommentTokenType::DocsLine}.boxed(),
-        LineCommentParser {prefix: "//", return_type: CommentTokenType::Line}.boxed(),
+        LineCommentParser {prefix: "///", return_type: docs_line_comment()}.boxed(),
+        LineCommentParser {prefix: "//", return_type: line_comment()}.boxed(),
 
-        BlockCommentParser {prefix: "/**", return_type: CommentTokenType::DocsBlock}.boxed(),
-        BlockCommentParser {prefix : "/*", return_type: CommentTokenType::Block}.boxed(),
+        BlockCommentParser {prefix: "/**", return_type: docs_block_comment()}.boxed(),
+        BlockCommentParser {prefix : "/*", return_type: block_comment()}.boxed(),
 
-        tag(";", Operator(Terminator)).boxed(),
-        tag("\r\n", Operator(Terminator)).boxed(),
-        tag("\r", Operator(Terminator)).boxed(),
-        tag("\n", Operator(Terminator)).boxed(),
+        tag(";", terminator()).boxed(),
+        tag("\r\n", terminator()).boxed(),
+        tag("\r", terminator()).boxed(),
+        tag("\n", terminator()).boxed(),
 
-        tag("<<=", Operator(BitShiftLeftAssign)).boxed(),
-        tag("<<", Operator(BitShiftLeft)).boxed(),
-        tag(">>=", Operator(BitShiftRightAssign)).boxed(),
-        tag(">>", Operator(BitShiftRight)).boxed(),
-        tag("&=", Operator(BitwiseAndAssign)).boxed(),
-        tag("&", Operator(BitwiseAnd)).boxed(),
-        tag("|=", Operator(BitwiseOrAssign)).boxed(),
-        tag("|", Operator(BitwiseOr)).boxed(),
-        tag("~=", Operator(BitwiseNotAssign)).boxed(),
-        tag("~", Operator(BitwiseNot)).boxed(),
-        tag("^=", Operator(BitwiseXorAssign)).boxed(),
-        tag("^", Operator(BitwiseXor)).boxed(),
+        tag("<<=", shl_assign()).boxed(),
+        tag(">>=", shr_assign()).boxed(),
+        tag("&=", bitwise_and_assign()).boxed(),
+        tag("|=", bitwise_or_assign()).boxed(),
+        tag("~=", bitwise_not_assign()).boxed(),
+        tag("^=", bitwise_xor_assign()).boxed(),
 
-        tag("!=", Operator(NotEquals)).boxed(),
-        tag("==", Operator(Equals)).boxed(),
-        tag(">=", Operator(GreaterThanEquals)).boxed(),
-        tag("<=", Operator(LessThanEquals)).boxed(),
-        tag(">", Operator(GreaterThan)).boxed(),
-        tag("<", Operator(LessThan)).boxed(),
+        tag("/=", slash_assign()).boxed(),
+        tag("*=", star_assign()).boxed(),
+        tag("+=", plus_assign()).boxed(),
+        tag("-=", minus_assign()).boxed(),
 
-        tag("(", Operator(LParen)).boxed(),
-        tag(")", Operator(RParen)).boxed(),
-        tag("[", Operator(LSquare)).boxed(),
-        tag("]", Operator(RSquare)).boxed(),
-        tag(",", Operator(Comma)).boxed(),
+        tag("=", assign()).boxed(),
 
-        tag("/=", Operator(DivideAssign)).boxed(),
-        tag("*=", Operator(MultiplyAssign)).boxed(),
-        tag("+=", Operator(PlusAssign)).boxed(),
-        tag("-=", Operator(MinusAssign)).boxed(),
-        tag("/", Operator(Divide)).boxed(),
-        tag("*", Operator(Multiply)).boxed(),
-        tag("+", Operator(Plus)).boxed(),
-        tag("-", Operator(Minus)).boxed(),
-        tag("=", Operator(Assign)).boxed(),
+        tag("<<", shl()).boxed(),
+        tag(">>", shr()).boxed(),
+        tag("/", slash()).boxed(),
+        tag("*", star()).boxed(),
+
+        tag("&", bitwise_and()).boxed(),
+        tag("|", bitwise_or()).boxed(),
+        tag("~", bitwise_not()).boxed(),
+        tag("^", bitwise_xor()).boxed(),
+
+        tag("!=", not_equals()).boxed(),
+        tag("==", equals()).boxed(),
+        tag(">=", greater_than_equals()).boxed(),
+        tag("<=", less_than_equals()).boxed(),
+        tag(">", greater_than()).boxed(),
+        tag("<", less_than()).boxed(),
+
+        tag("(", l_paren()).boxed(),
+        tag(")", r_paren()).boxed(),
+        tag("[", l_square()).boxed(),
+        tag("]", r_square()).boxed(),
+        tag(",", comma()).boxed(),
+
+
+        tag("+", plus()).boxed(),
+        tag("-", minus()).boxed(),
+
+        tag(":", colon()).boxed(),
 
 
 
         WhitespaceParser.boxed(),
+
+        keyword("and", and()).boxed(),
+        keyword("or", or()).boxed(),
+        keyword("fun", fun()).boxed(),
+        keyword("if", if_()).boxed(),
+        keyword("elif", elif()).boxed(),
+        keyword("else", else_()).boxed(),
+        keyword("not", not()).boxed(),
+        keyword("loop", loop_()).boxed(),
+        keyword("break", break_()).boxed(),
+        keyword("continue", continue_()).boxed(),
+        keyword("return", return_()).boxed(),
+
         IdentifierParser.boxed(),
         ]);
         if self.index > self.input.len() {
@@ -946,9 +1354,6 @@ impl<'a> Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::CommentTokenType::*;
-    use super::LiteralTokenType::*;
-    use super::OperatorTokenType::*;
     use super::*;
     #[test]
     fn test_lexer_1() {
@@ -956,7 +1361,7 @@ mod tests {
             Lexer::new("2 != 3").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    token_type: int(),
                     start: Position {
                         column_number: 0,
                         line_number: 0,
@@ -971,7 +1376,7 @@ mod tests {
                     contents: "2",
                 },
                 Token {
-                    token_type: TokenType::Whitespace,
+                    token_type: white_space(),
                     start: Position {
                         column_number: 1,
                         line_number: 0,
@@ -986,7 +1391,7 @@ mod tests {
                     contents: " ",
                 },
                 Token {
-                    token_type: TokenType::Operator(OperatorTokenType::NotEquals),
+                    token_type: not_equals(),
                     start: Position {
                         column_number: 2,
                         line_number: 0,
@@ -1001,7 +1406,7 @@ mod tests {
                     contents: "!=",
                 },
                 Token {
-                    token_type: TokenType::Whitespace,
+                    token_type: white_space(),
                     start: Position {
                         column_number: 4,
                         line_number: 0,
@@ -1016,7 +1421,7 @@ mod tests {
                     contents: " ",
                 },
                 Token {
-                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    token_type: int(),
                     start: Position {
                         column_number: 5,
                         line_number: 0,
@@ -1031,17 +1436,24 @@ mod tests {
                     contents: "3",
                 },
                 Token {
-                    token_type: TokenType::Eoi,
-                    start: Position { line_number: 0, column_number: 6, index: 6 },
-                    end: Position { line_number: 0, column_number: 6, index: 6 },
+                    token_type: eoi(),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 6,
+                        index: 6
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 6,
+                        index: 6
+                    },
                     len: 0,
                     contents: "",
-                }
-                //Token::Int("2"),
-                //Token::Whitespace(" "),
-                //Token::NotEquals,
-                //Token::Whitespace(" "),
-                //Token::Int("3"),
+                } //Token::Int("2"),
+                  //Token::Whitespace(" "),
+                  //Token::NotEquals,
+                  //Token::Whitespace(" "),
+                  //Token::Int("3"),
             ]
         )
     }
@@ -1080,7 +1492,7 @@ mod tests {
             Lexer::new("1\r\n2\r\n3").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    token_type: int(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
@@ -1095,7 +1507,7 @@ mod tests {
                     contents: "1",
                 },
                 Token {
-                    token_type: TokenType::Operator(Terminator),
+                    token_type: terminator(),
                     start: Position {
                         line_number: 0,
                         column_number: 1,
@@ -1110,7 +1522,7 @@ mod tests {
                     contents: "\r\n",
                 },
                 Token {
-                    token_type: TokenType::Literal(Int),
+                    token_type: int(),
                     start: Position {
                         line_number: 1,
                         column_number: 0,
@@ -1125,7 +1537,7 @@ mod tests {
                     contents: "2",
                 },
                 Token {
-                    token_type: TokenType::Operator(Terminator),
+                    token_type: terminator(),
                     start: Position {
                         line_number: 1,
                         column_number: 1,
@@ -1140,7 +1552,7 @@ mod tests {
                     contents: "\r\n",
                 },
                 Token {
-                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    token_type: int(),
                     start: Position {
                         line_number: 2,
                         column_number: 0,
@@ -1155,7 +1567,7 @@ mod tests {
                     contents: "3",
                 },
                 Token {
-                    token_type: TokenType::Eoi,
+                    token_type: eoi(),
                     start: Position {
                         line_number: 2,
                         column_number: 1,
@@ -1179,7 +1591,7 @@ mod tests {
             Lexer::new("1\n2\n3").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    token_type: int(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
@@ -1194,7 +1606,7 @@ mod tests {
                     contents: "1",
                 },
                 Token {
-                    token_type: TokenType::Operator(Terminator),
+                    token_type: terminator(),
                     start: Position {
                         line_number: 0,
                         column_number: 1,
@@ -1209,7 +1621,7 @@ mod tests {
                     contents: "\n",
                 },
                 Token {
-                    token_type: TokenType::Literal(Int),
+                    token_type: int(),
                     start: Position {
                         line_number: 1,
                         column_number: 0,
@@ -1224,7 +1636,7 @@ mod tests {
                     contents: "2",
                 },
                 Token {
-                    token_type: TokenType::Operator(Terminator),
+                    token_type: terminator(),
                     start: Position {
                         line_number: 1,
                         column_number: 1,
@@ -1239,7 +1651,7 @@ mod tests {
                     contents: "\n",
                 },
                 Token {
-                    token_type: TokenType::Literal(LiteralTokenType::Int),
+                    token_type: int(),
                     start: Position {
                         line_number: 2,
                         column_number: 0,
@@ -1254,7 +1666,7 @@ mod tests {
                     contents: "3",
                 },
                 Token {
-                    token_type: TokenType::Eoi,
+                    token_type: eoi(),
                     start: Position {
                         line_number: 2,
                         column_number: 1,
@@ -1280,7 +1692,7 @@ mod tests {
                 .unwrap(),
             vec![
                 Token {
-                    token_type: TokenType::Comment(Block),
+                    token_type: block_comment(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
@@ -1295,7 +1707,7 @@ mod tests {
                     contents: "/*\r\n\r\n\r\nI am comment!\r\n*/",
                 },
                 Token {
-                    token_type: TokenType::Literal(Int),
+                    token_type: int(),
                     start: Position {
                         line_number: 4,
                         column_number: 2,
@@ -1310,7 +1722,7 @@ mod tests {
                     contents: "123",
                 },
                 Token {
-                    token_type: TokenType::Comment(Block),
+                    token_type: block_comment(),
                     start: Position {
                         line_number: 4,
                         column_number: 5,
@@ -1325,7 +1737,7 @@ mod tests {
                     contents: "/*I am second comment!\r\n*/",
                 },
                 Token {
-                    token_type: TokenType::Operator(Terminator),
+                    token_type: terminator(),
                     start: Position {
                         line_number: 5,
                         column_number: 2,
@@ -1340,7 +1752,7 @@ mod tests {
                     contents: ";",
                 },
                 Token {
-                    token_type: TokenType::Operator(Terminator),
+                    token_type: terminator(),
                     start: Position {
                         line_number: 5,
                         column_number: 3,
@@ -1355,7 +1767,7 @@ mod tests {
                     contents: ";",
                 },
                 Token {
-                    token_type: TokenType::Eoi,
+                    token_type: eoi(),
                     start: Position {
                         line_number: 5,
                         column_number: 4,
@@ -1378,7 +1790,7 @@ mod tests {
             Lexer::new("'äääää'").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: TokenType::Literal(String),
+                    token_type: string(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
