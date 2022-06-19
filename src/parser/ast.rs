@@ -1,18 +1,18 @@
 // Grammar:
 // expression = (literal | identifier | (expression operator expression))
-use super::generate_bytecode::{Program, ValueStore};
+use super::bytecode::{Bytecode, OpCodes, Program, ValueStore};
 use crate::lexer::lex::{
     terminator, white_space, ArithmeticOperatorTokenType, AssignmentOperatorTokenType,
     BooleanComparisonKeywordTokenType, CommaOperatorTokenType, ComparisonOperatorTokenType,
     KeywordTokenType, LParenOperatorTokenType, LiteralTokenType, NotKeywordTokenType,
-    OperatorTokenType::{self, *},
+    OperatorTokenType::{self},
     RParenOperatorTokenType, TermOperatorTokenType, Token, TokenType, UnaryOperatorTokenType,
 };
 use ibig::{ibig, IBig};
 use std::fmt::{Debug, Display};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct NodeMetaData<'a> {
+pub(crate) struct NodePositionData<'a> {
     pub(crate) contents: &'a str,
     pub(crate) index: usize,
     pub(crate) len: usize,
@@ -21,20 +21,20 @@ pub(crate) struct NodeMetaData<'a> {
 }
 
 pub(crate) trait GenerateBytecode {
-    fn gen_bytecode(&mut self, bytecode: &mut Vec<u8>);
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Statement<'a> {
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) statement_type: StatementType<'a>,
 }
 
 impl<'a> GenerateBytecode for Statement<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Vec<u8>) {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
         match self.statement_type {
             super::ast::StatementType::Expr(ref mut e) => e.gen_bytecode(bytecode),
-            _ => unreachable!(),
+            _ => todo!(),
         }
     }
 }
@@ -49,23 +49,21 @@ pub(crate) enum StatementType<'a> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct Identifier<'a> {
     pub(crate) id: &'a str,
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Expression<'a> {
     pub(crate) main_expression: ComparisonExpression<'a>,
     pub(crate) sub_expressions: Vec<SubExpression<'a>>,
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
 }
 
 impl<'a> GenerateBytecode for Expression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Vec<u8>) {
-        match self.main_expression.comparison_type {
-            super::ast::ComparisonExpressionType::ComparisonChain(ref mut chain) => {
-                chain.gen_bytecode(bytecode)
-            }
-            _ => unreachable!(),
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        self.main_expression.gen_bytecode(bytecode);
+        for _sub_expr in self.sub_expressions.iter() {
+            todo!()
         }
     }
 }
@@ -74,45 +72,24 @@ impl<'a> GenerateBytecode for Expression<'a> {
 pub(crate) struct SubExpression<'a> {
     pub(crate) keyword: BooleanComparisonKeywordTokenType,
     pub(crate) expression: ComparisonExpression<'a>,
-    pub(crate) meta: NodeMetaData<'a>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ComparisonChainExpression<'a> {
-    pub(crate) main_expression: ArithmeticExpression<'a>,
-    pub(crate) sub_expressions: Vec<SubComparisonExpression<'a>>,
-    pub(crate) meta: NodeMetaData<'a>,
-}
-
-impl<'a> GenerateBytecode for ComparisonChainExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Vec<u8>) {
-        match self
-            .main_expression
-            .main_expression
-            .main_expression
-            .factor_type
-        {
-            super::ast::FactorType::Call(ref mut call) => {
-                if call.params.is_some() {
-                } else {
-                }
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SubComparisonExpression<'a> {
-    pub(crate) operator: ComparisonOperatorTokenType,
-    pub(crate) expression: ArithmeticExpression<'a>,
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ComparisonExpression<'a> {
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) comparison_type: ComparisonExpressionType<'a>,
+}
+
+impl<'a> GenerateBytecode for ComparisonExpression<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        match self.comparison_type {
+            super::ast::ComparisonExpressionType::ComparisonChain(ref mut chain) => {
+                chain.gen_bytecode(bytecode)
+            }
+            _ => todo!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,28 +100,69 @@ pub(crate) enum ComparisonExpressionType<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ComparisonChainExpression<'a> {
+    pub(crate) main_expression: ArithmeticExpression<'a>,
+    pub(crate) sub_expressions: Vec<SubComparisonExpression<'a>>,
+    pub(crate) position: NodePositionData<'a>,
+}
+
+impl<'a> GenerateBytecode for ComparisonChainExpression<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        self.main_expression.gen_bytecode(bytecode);
+        for _sub_expr in self.sub_expressions.iter() {
+            todo!()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubComparisonExpression<'a> {
+    pub(crate) operator: ComparisonOperatorTokenType,
+    pub(crate) expression: ArithmeticExpression<'a>,
+    pub(crate) position: NodePositionData<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ArithmeticExpression<'a> {
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) main_expression: Term<'a>,
     pub(crate) sub_expressions: Vec<SubArithmeticExpression<'a>>,
+}
+
+impl<'a> GenerateBytecode for ArithmeticExpression<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        self.main_expression.gen_bytecode(bytecode);
+        for _sub_expr in self.sub_expressions.iter() {
+            todo!()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubArithmeticExpression<'a> {
     pub(crate) operator: ArithmeticOperatorTokenType,
     pub(crate) expression: Term<'a>,
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Term<'a> {
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) main_expression: Factor<'a>,
     pub(crate) sub_expressions: Vec<SubTerm<'a>>,
 }
+
+impl<'a> GenerateBytecode for Term<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        self.main_expression.gen_bytecode(bytecode);
+        for _sub_expr in self.sub_expressions.iter() {
+            todo!()
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubTerm<'a> {
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) operator: TermOperatorTokenType,
     pub(crate) expression: Factor<'a>,
 }
@@ -152,7 +170,13 @@ pub(crate) struct SubTerm<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Factor<'a> {
     pub(crate) factor_type: FactorType<'a>,
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
+}
+
+impl<'a> GenerateBytecode for Factor<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        self.factor_type.gen_bytecode(bytecode)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,11 +185,39 @@ pub(crate) enum FactorType<'a> {
     Call(Call<'a>),
 }
 
+impl<'a> GenerateBytecode for FactorType<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        match self {
+            super::ast::FactorType::Call(ref mut call) => {
+                call.gen_bytecode(bytecode);
+            }
+            _ => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Call<'a> {
     pub(crate) atom: Atom<'a>,
     pub(crate) params: Option<Vec<Expression<'a>>>,
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
+}
+
+impl<'a> GenerateBytecode for Call<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        if let Some(ref mut params) = self.params {
+
+            for param in params.iter_mut() {
+                param.gen_bytecode(bytecode);
+            }
+            self.atom.gen_bytecode(bytecode);
+            bytecode.push(OpCodes::CallFunction);
+            bytecode.push_usize(params.len());
+
+        } else {
+            self.atom.gen_bytecode(bytecode);
+        }
+    }
 }
 /*
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,10 +234,15 @@ pub(crate) struct Param<'a> {
 */
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Atom<'a> {
-    pub(crate) meta: NodeMetaData<'a>,
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) atom_type: AtomType<'a>,
 }
 
+impl<'a> GenerateBytecode for Atom<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        self.atom_type.gen_bytecode(bytecode);
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Int {
     Big(usize),
@@ -195,7 +252,7 @@ pub(crate) enum Int {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AtomType<'a> {
     Int(Int),
-    Identifier(&'a str),
+    Identifier(usize),
     String(usize),
     ExpressionWithParentheses(
         LParenOperatorTokenType,
@@ -209,6 +266,35 @@ pub(crate) enum AtomType<'a> {
     While(WhileExpression),
     FuncDef(FunctionDefinitionExpression),
     Loop(LoopExpression),
+}
+
+impl<'a> GenerateBytecode for AtomType<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        match self {
+            Self::Int(i) => match i {
+                Int::Small(value) => {
+                    bytecode.push(OpCodes::LoadSmallIntLiteral);
+                    bytecode.push_usize(*value);
+                }
+                Int::Big(index) => {
+                    bytecode.push(OpCodes::LoadBigIntLiteral);
+                    bytecode.push_usize(*index);
+                }
+            },
+            Self::String(index) => {
+                bytecode.push(OpCodes::LoadStringLiteral);
+                bytecode.push_usize(*index);
+            }
+            Self::Identifier(index) => {
+                bytecode.push(OpCodes::LoadIdentifierLiteral);
+                bytecode.push_usize(*index);
+            }
+            unknown => {
+                println!("{:#?}", unknown);
+                todo!()
+            }
+        }
+    }
 }
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct ListExpression;
@@ -253,6 +339,7 @@ impl<'a> Ast<'a> {
                 statements: Vec::new(),
                 big_int_literals: ValueStore::new(),
                 string_literals: ValueStore::new(),
+                identifier_literals: ValueStore::new(),
             },
         }
     }
@@ -287,7 +374,7 @@ impl<'a> Ast<'a> {
         self.step_over_whitespace();
         let expression = self.expect_expression()?;
         Ok(Statement {
-            meta: expression.meta,
+            position: expression.position,
             statement_type: StatementType::Expr(expression),
         })
     }
@@ -297,7 +384,7 @@ impl<'a> Ast<'a> {
 
         let comp_expr = self.expect_comparison_expression()?;
         Ok(Expression {
-            meta: comp_expr.meta,
+            position: comp_expr.position,
             sub_expressions: vec![],
             main_expression: comp_expr,
         })
@@ -306,32 +393,32 @@ impl<'a> Ast<'a> {
     fn expect_comparison_expression(&mut self) -> ParserResult<ComparisonExpression<'a>> {
         self.step_over_whitespace();
 
-        let (comparison_type, meta) = if self.current_token.token_type
+        let (comparison_type, position) = if self.current_token.token_type
             == TokenType::Keyword(KeywordTokenType::Not(NotKeywordTokenType::Not))
         {
             self.next_token();
             let inner = self.expect_comparison_expression()?;
-            let meta = inner.meta;
+            let position = inner.position;
             (
                 ComparisonExpressionType::Not(NotKeywordTokenType::Not, Box::new(inner)),
-                meta,
+                position,
             )
         } else {
             let arith = self.expect_arithmetic_expression()?;
-            let meta = arith.meta;
+            let position = arith.position;
 
             (
                 ComparisonExpressionType::ComparisonChain(ComparisonChainExpression {
-                    meta: arith.meta,
+                    position: arith.position,
                     main_expression: arith,
                     sub_expressions: vec![],
                 }),
-                meta,
+                position,
             )
         };
         Ok(ComparisonExpression {
             comparison_type,
-            meta,
+            position,
         })
     }
 
@@ -340,7 +427,7 @@ impl<'a> Ast<'a> {
 
         let term = self.expect_term()?;
         Ok(ArithmeticExpression {
-            meta: term.meta,
+            position: term.position,
             main_expression: term,
             sub_expressions: vec![],
         })
@@ -350,11 +437,11 @@ impl<'a> Ast<'a> {
         self.step_over_whitespace();
 
         let factor = self.expect_factor()?;
-        let meta = factor.meta;
+        let position = factor.position;
         Ok(Term {
             main_expression: factor,
             sub_expressions: vec![],
-            meta,
+            position,
         })
     }
 
@@ -362,10 +449,10 @@ impl<'a> Ast<'a> {
         self.step_over_whitespace();
 
         let call = self.expect_call()?;
-        let meta = call.meta;
+        let position = call.position;
         Ok(Factor {
             factor_type: FactorType::Call(call),
-            meta,
+            position,
         })
     }
 
@@ -398,7 +485,7 @@ impl<'a> Ast<'a> {
             self.next_token();
         }
         Ok(Call {
-            meta: atom.meta,
+            position: atom.position,
             atom,
             params,
         })
@@ -426,10 +513,17 @@ impl<'a> Ast<'a> {
                 let idx = self.program.string_literals.register_value(value);
                 AtomType::String(idx)
             }
-            TokenType::Identifier => AtomType::Identifier(self.current_token.contents),
+            TokenType::Identifier => {
+                let idx = self
+                    .program
+                    .identifier_literals
+                    .register_value(self.current_token.contents);
+
+                AtomType::Identifier(idx)
+            }
             _ => unreachable!(),
         };
-        let meta = NodeMetaData {
+        let position = NodePositionData {
             index: self.current_token.start.index,
             column_number: self.current_token.start.column_number,
             line_number: self.current_token.start.line_number,
@@ -437,7 +531,10 @@ impl<'a> Ast<'a> {
             contents: self.current_token.contents,
         };
         self.next_token();
-        Ok(Atom { atom_type, meta })
+        Ok(Atom {
+            atom_type,
+            position,
+        })
     }
 
     fn next_token(&mut self) {

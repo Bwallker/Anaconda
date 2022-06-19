@@ -9,7 +9,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-
+use parser::bytecode::generate_bytecode;
 const TEST_PROGRAM: &str = "\t ";
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -119,7 +119,10 @@ fn run() -> color_eyre::Result<()> {
             };
             let statements = parse(&contents);
             match statements {
-                Ok(v) => println!("{v:#?}"),
+                Ok(v) => {
+                    println!("{v:#?}");
+                    println!("{:#?}", generate_bytecode(v.statements))
+                }
                 Err(e) => return Err(eyre!(format!("{e}"))),
             }
         }
