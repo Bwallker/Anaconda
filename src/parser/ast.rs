@@ -32,18 +32,41 @@ pub(crate) struct Statement<'a> {
 
 impl<'a> GenerateBytecode for Statement<'a> {
     fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
-        match self.statement_type {
-            super::ast::StatementType::Expr(ref mut e) => e.gen_bytecode(bytecode),
-            _ => todo!(),
-        }
+        self.statement_type.gen_bytecode(bytecode);
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StatementType<'a> {
-    Return,
+    Return(Option<Expression<'a>>),
     Break,
     Assignment(Identifier<'a>, AssignmentOperatorTokenType, Expression<'a>),
     Expr(Expression<'a>),
+}
+
+impl<'a> GenerateBytecode for StatementType<'a> {
+    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+        match self {
+            Self::Expr(e) => {
+                e.gen_bytecode(bytecode);
+                bytecode.push(OpCodes::Pop);
+            }
+            Self::Return(ret_val) => {
+                if let Some(v) = ret_val {
+                    v.gen_bytecode(bytecode);
+                } else {
+                    bytecode.push(OpCodes::LoadNothing);
+                }
+                bytecode.push(OpCodes::Return);
+            }
+            Self::Break => {
+                bytecode.push(OpCodes::Break);
+            }
+            Self::Assignment(i, a, e) => {
+                
+            }
+            _ => todo!(),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -206,14 +229,12 @@ pub(crate) struct Call<'a> {
 impl<'a> GenerateBytecode for Call<'a> {
     fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
         if let Some(ref mut params) = self.params {
-
             for param in params.iter_mut() {
                 param.gen_bytecode(bytecode);
             }
             self.atom.gen_bytecode(bytecode);
             bytecode.push(OpCodes::CallFunction);
             bytecode.push_usize(params.len());
-
         } else {
             self.atom.gen_bytecode(bytecode);
         }
@@ -286,7 +307,7 @@ impl<'a> GenerateBytecode for AtomType<'a> {
                 bytecode.push_usize(*index);
             }
             Self::Identifier(index) => {
-                bytecode.push(OpCodes::LoadIdentifierLiteral);
+                bytecode.push(OpCodes::LoadNameOfIdentifierFromIndex);
                 bytecode.push_usize(*index);
             }
             unknown => {

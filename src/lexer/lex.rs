@@ -239,6 +239,7 @@ pub(crate) enum AssignmentOperatorTokenType {
     MinusAssign,
     StarAssign,
     SlashAssign,
+    ProcentAssign,
     BitShiftLeftAssign,
     BitShiftRightAssign,
     BitwiseAndAssign,
@@ -274,6 +275,12 @@ pub(crate) fn star_assign() -> TokenType {
 pub(crate) fn slash_assign() -> TokenType {
     TokenType::Operator(OperatorTokenType::Assignment(
         AssignmentOperatorTokenType::SlashAssign,
+    ))
+}
+
+pub(crate) fn procent_assign() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Assignment(
+        AssignmentOperatorTokenType::ProcentAssign,
     ))
 }
 
@@ -367,6 +374,7 @@ pub(crate) fn minus() -> TokenType {
 pub(crate) enum TermOperatorTokenType {
     Star,
     Slash,
+    Procent,
     BitShiftLeft,
     BitShiftRight,
 }
@@ -377,6 +385,10 @@ pub(crate) fn star() -> TokenType {
 
 pub(crate) fn slash() -> TokenType {
     TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::Slash))
+}
+
+pub(crate) fn procent() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::Procent))
 }
 
 pub(crate) fn shl() -> TokenType {
@@ -1244,25 +1256,27 @@ impl<'a> Lexer<'a> {
         tag("\r", terminator()).boxed(),
         tag("\n", terminator()).boxed(),
 
+        
+        tag("/=", slash_assign()).boxed(),
+        tag("*=", star_assign()).boxed(),
+        tag("%=", procent_assign()).boxed(),
         tag("<<=", shl_assign()).boxed(),
         tag(">>=", shr_assign()).boxed(),
+
+        tag("+=", plus_assign()).boxed(),
+        tag("-=", minus_assign()).boxed(),
         tag("&=", bitwise_and_assign()).boxed(),
         tag("|=", bitwise_or_assign()).boxed(),
         tag("~=", bitwise_not_assign()).boxed(),
         tag("^=", bitwise_xor_assign()).boxed(),
-
-        tag("/=", slash_assign()).boxed(),
-        tag("*=", star_assign()).boxed(),
-        tag("+=", plus_assign()).boxed(),
-        tag("-=", minus_assign()).boxed(),
-
         tag("=", assign()).boxed(),
 
         tag("<<", shl()).boxed(),
         tag(">>", shr()).boxed(),
         tag("/", slash()).boxed(),
         tag("*", star()).boxed(),
-
+        tag("%", procent()).boxed(),
+        
         tag("&", bitwise_and()).boxed(),
         tag("|", bitwise_or()).boxed(),
         tag("~", bitwise_not()).boxed(),

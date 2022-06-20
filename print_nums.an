@@ -1,4 +1,4 @@
-if cfg('main'):
+if meta('main'):
     main()
 
 fun main():

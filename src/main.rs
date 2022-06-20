@@ -3,13 +3,13 @@ mod parser;
 
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::eyre;
+use parser::bytecode::{generate_bytecode, BytecodeInterpreter};
 use parser::parse;
 use std::fs::read_to_string;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use parser::bytecode::generate_bytecode;
 const TEST_PROGRAM: &str = "\t ";
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -27,6 +27,9 @@ enum Commands {
 
     #[clap(alias = "p")]
     Parse(Parse),
+
+    #[clap(alias = "r")]
+    Run(Run),
 }
 #[derive(Args, Debug)]
 struct Lex {
@@ -47,6 +50,17 @@ struct Parse {
     #[clap(short, long, value_name = "PROGRAM")]
     program: Option<String>,
 }
+
+#[derive(Args, Debug)]
+struct Run {
+    /// The path to the program to run. Mutually exclusive with program.
+    #[clap(long = "path", parse(from_os_str), value_name = "PATH")]
+    program_path: Option<PathBuf>,
+    /// The program to run. Mutually exclusive with program_path.
+    #[clap(short, long, value_name = "PROGRAM")]
+    program: Option<String>,
+}
+
 fn main() {
     match run() {
         Ok(()) => (),
@@ -117,14 +131,40 @@ fn run() -> color_eyre::Result<()> {
                 ))
                 }
             };
-            let statements = parse(&contents);
-            match statements {
+            let program = parse(&contents);
+            match program {
                 Ok(v) => {
                     println!("{v:#?}");
                     println!("{:#?}", generate_bytecode(v.statements))
                 }
                 Err(e) => return Err(eyre!(format!("{e}"))),
             }
+        },
+        Commands::Run(r) => {
+            let contents = match (r.program, r.program_path) {
+                (None, None) => {
+                    return Err(eyre!(
+                    "You must provide either a program or a program path for the run subcommand."
+                ))
+                }
+                (Some(v), None) => v,
+                (None, Some(v)) => read_to_string(v)?,
+                (Some(_), Some(_)) => {
+                    return Err(eyre!(
+                    "You cannot provide both a program and a program path to the run subcommand."
+                ))
+                }
+            };
+            let program = parse(&contents);
+            let program = match program {
+                Ok(v) => {
+                    v
+                }
+                Err(e) => return Err(eyre!(format!("{e}"))),
+            };
+            let bytecode = generate_bytecode(program.statements.clone());
+            let mut bytecode_interpreter = BytecodeInterpreter::new(program, bytecode);
+            bytecode_interpreter.interpret_bytecode();
         }
     }
     Ok(())
