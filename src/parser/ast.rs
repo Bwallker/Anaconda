@@ -21,7 +21,7 @@ pub(crate) struct NodePositionData<'a> {
 }
 
 pub(crate) trait GenerateBytecode {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode);
+    fn gen_bytecode(&self, bytecode: &mut Bytecode);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,7 +31,7 @@ pub(crate) struct Statement<'a> {
 }
 
 impl<'a> GenerateBytecode for Statement<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         self.statement_type.gen_bytecode(bytecode);
     }
 }
@@ -39,12 +39,12 @@ impl<'a> GenerateBytecode for Statement<'a> {
 pub(crate) enum StatementType<'a> {
     Return(Option<Expression<'a>>),
     Break,
-    Assignment(Identifier<'a>, AssignmentOperatorTokenType, Expression<'a>),
+    Assignment(usize, AssignmentOperatorTokenType, Expression<'a>),
     Expr(Expression<'a>),
 }
 
 impl<'a> GenerateBytecode for StatementType<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         match self {
             Self::Expr(e) => {
                 e.gen_bytecode(bytecode);
@@ -62,7 +62,26 @@ impl<'a> GenerateBytecode for StatementType<'a> {
                 bytecode.push(OpCodes::Break);
             }
             Self::Assignment(i, a, e) => {
-                
+                let operator_opcode = match a {
+                    AssignmentOperatorTokenType::Assign => OpCodes::Assign,
+                    AssignmentOperatorTokenType::BitshiftLeftAssign => {
+                        OpCodes::BitshiftLeftAndAssign
+                    }
+                    AssignmentOperatorTokenType::BitshiftRightAssign => {
+                        OpCodes::BitshiftRightAndAssign
+                    }
+                    AssignmentOperatorTokenType::BitwiseAndAssign => OpCodes::BitwiseAndAndAssign,
+                    AssignmentOperatorTokenType::BitwiseOrAssign => OpCodes::BitwiseOrAndAssign,
+                    AssignmentOperatorTokenType::BitwiseXorAssign => OpCodes::BitwiseXorAndAssign,
+                    AssignmentOperatorTokenType::MinusAssign => OpCodes::SubAndAssign,
+                    AssignmentOperatorTokenType::PlusAssign => OpCodes::AddAndAssign,
+                    AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
+                    AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
+                    AssignmentOperatorTokenType::ProcentAssign => OpCodes::ModuloAndAssign,
+                };
+                e.gen_bytecode(bytecode);
+                bytecode.push(operator_opcode);
+                bytecode.push_usize(*i);
             }
             _ => todo!(),
         }
@@ -83,10 +102,10 @@ pub(crate) struct Expression<'a> {
 }
 
 impl<'a> GenerateBytecode for Expression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         self.main_expression.gen_bytecode(bytecode);
-        for _sub_expr in self.sub_expressions.iter() {
-            todo!()
+        for sub_expr in self.sub_expressions.iter() {
+            sub_expr.gen_bytecode(bytecode)
         }
     }
 }
@@ -98,6 +117,17 @@ pub(crate) struct SubExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
 }
 
+impl<'a> GenerateBytecode for SubExpression<'a> {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
+        self.expression.gen_bytecode(bytecode);
+        let opcode = match self.keyword {
+            BooleanComparisonKeywordTokenType::And => OpCodes::BooleanAnd,
+            BooleanComparisonKeywordTokenType::Or => OpCodes::BooleanOr,
+        };
+        bytecode.push(opcode);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ComparisonExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
@@ -105,13 +135,8 @@ pub(crate) struct ComparisonExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for ComparisonExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
-        match self.comparison_type {
-            super::ast::ComparisonExpressionType::ComparisonChain(ref mut chain) => {
-                chain.gen_bytecode(bytecode)
-            }
-            _ => todo!(),
-        }
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
+        self.comparison_type.gen_bytecode(bytecode)
     }
 }
 
@@ -119,7 +144,19 @@ impl<'a> GenerateBytecode for ComparisonExpression<'a> {
 
 pub(crate) enum ComparisonExpressionType<'a> {
     Not(NotKeywordTokenType, Box<ComparisonExpression<'a>>),
-    ComparisonChain(ComparisonChainExpression<'a>),
+    ComparisonChain(Box<ComparisonChainExpression<'a>>),
+}
+
+impl<'a> GenerateBytecode for ComparisonExpressionType<'a> {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
+        match self {
+            Self::ComparisonChain(chain) => chain.gen_bytecode(bytecode),
+            Self::Not(_n, e) => {
+                e.gen_bytecode(bytecode);
+                bytecode.push(OpCodes::BooleanNot)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,7 +167,7 @@ pub(crate) struct ComparisonChainExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for ComparisonChainExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         self.main_expression.gen_bytecode(bytecode);
         for _sub_expr in self.sub_expressions.iter() {
             todo!()
@@ -145,6 +182,21 @@ pub(crate) struct SubComparisonExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
 }
 
+impl<'a> GenerateBytecode for SubComparisonExpression<'a> {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
+        self.expression.gen_bytecode(bytecode);
+        let comparator = match self.operator {
+            ComparisonOperatorTokenType::Equals => OpCodes::Equals,
+            ComparisonOperatorTokenType::NotEquals => OpCodes::NotEquals,
+            ComparisonOperatorTokenType::LessThan => OpCodes::LessThan,
+            ComparisonOperatorTokenType::GreaterThan => OpCodes::GreaterThan,
+            ComparisonOperatorTokenType::LessThanEquals => OpCodes::LessThanEquals,
+            ComparisonOperatorTokenType::GreaterThanEquals => OpCodes::GreaterThanEquals,
+        };
+        bytecode.push(comparator);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ArithmeticExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
@@ -153,10 +205,10 @@ pub(crate) struct ArithmeticExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for ArithmeticExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         self.main_expression.gen_bytecode(bytecode);
-        for _sub_expr in self.sub_expressions.iter() {
-            todo!()
+        for sub_expr in self.sub_expressions.iter() {
+            sub_expr.gen_bytecode(bytecode)
         }
     }
 }
@@ -168,6 +220,23 @@ pub(crate) struct SubArithmeticExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
 }
 
+impl<'a> GenerateBytecode for SubArithmeticExpression<'a> {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
+        self.expression.gen_bytecode(bytecode);
+        let arith_op = match self.operator {
+            ArithmeticOperatorTokenType::Unary(u) => match u {
+                UnaryOperatorTokenType::Minus => OpCodes::Sub,
+                UnaryOperatorTokenType::Plus => OpCodes::Add,
+                UnaryOperatorTokenType::BitwiseNot => unreachable!(),
+            },
+            ArithmeticOperatorTokenType::BitwiseAnd => OpCodes::BitwiseAnd,
+            ArithmeticOperatorTokenType::BitwiseOr => OpCodes::BitwiseOr,
+            ArithmeticOperatorTokenType::BitwiseXor => OpCodes::BitwiseXor,
+        };
+        bytecode.push(arith_op);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Term<'a> {
     pub(crate) position: NodePositionData<'a>,
@@ -176,10 +245,10 @@ pub(crate) struct Term<'a> {
 }
 
 impl<'a> GenerateBytecode for Term<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         self.main_expression.gen_bytecode(bytecode);
-        for _sub_expr in self.sub_expressions.iter() {
-            todo!()
+        for sub_expr in self.sub_expressions.iter() {
+            sub_expr.gen_bytecode(bytecode)
         }
     }
 }
@@ -190,6 +259,19 @@ pub(crate) struct SubTerm<'a> {
     pub(crate) expression: Factor<'a>,
 }
 
+impl<'a> GenerateBytecode for SubTerm<'a> {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
+        self.expression.gen_bytecode(bytecode);
+        bytecode.push(match self.operator {
+            TermOperatorTokenType::BitshiftLeft => OpCodes::BitshiftLeft,
+            TermOperatorTokenType::BitshiftRight => OpCodes::BitshiftRight,
+            TermOperatorTokenType::Slash => OpCodes::Divide,
+            TermOperatorTokenType::Star => OpCodes::Multiply,
+            TermOperatorTokenType::Procent => OpCodes::Modulo,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Factor<'a> {
     pub(crate) factor_type: FactorType<'a>,
@@ -197,7 +279,7 @@ pub(crate) struct Factor<'a> {
 }
 
 impl<'a> GenerateBytecode for Factor<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         self.factor_type.gen_bytecode(bytecode)
     }
 }
@@ -209,12 +291,19 @@ pub(crate) enum FactorType<'a> {
 }
 
 impl<'a> GenerateBytecode for FactorType<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         match self {
-            super::ast::FactorType::Call(ref mut call) => {
+            Self::Call(call) => {
                 call.gen_bytecode(bytecode);
             }
-            _ => todo!(),
+            Self::UnaryFactor(u, f) => {
+                f.gen_bytecode(bytecode);
+                bytecode.push(match u {
+                    UnaryOperatorTokenType::BitwiseNot => OpCodes::BitwiseNot,
+                    UnaryOperatorTokenType::Plus => OpCodes::UnaryPlus,
+                    UnaryOperatorTokenType::Minus => OpCodes::UnaryMinus,
+                })
+            }
         }
     }
 }
@@ -227,9 +316,9 @@ pub(crate) struct Call<'a> {
 }
 
 impl<'a> GenerateBytecode for Call<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
-        if let Some(ref mut params) = self.params {
-            for param in params.iter_mut() {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
+        if let Some(ref params) = self.params {
+            for param in params.iter() {
                 param.gen_bytecode(bytecode);
             }
             self.atom.gen_bytecode(bytecode);
@@ -260,7 +349,7 @@ pub(crate) struct Atom<'a> {
 }
 
 impl<'a> GenerateBytecode for Atom<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         self.atom_type.gen_bytecode(bytecode);
     }
 }
@@ -290,7 +379,7 @@ pub(crate) enum AtomType<'a> {
 }
 
 impl<'a> GenerateBytecode for AtomType<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode) {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode) {
         match self {
             Self::Int(i) => match i {
                 Int::Small(value) => {
@@ -340,8 +429,197 @@ impl Display for ParserError {
         write!(f, "ParserError")
     }
 }
+
 impl std::error::Error for ParserError {}
+
 pub(crate) type ParserResult<T> = Result<T, ParserError>;
+
+trait TryParseSelf<'a>: Sized {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self>;
+}
+
+impl<'a> TryParseSelf<'a> for Statement<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+        let expression = Expression::expect(ast)?;
+        Ok(Statement {
+            position: expression.position,
+            statement_type: StatementType::Expr(expression),
+        })
+    }
+}
+
+impl<'a> TryParseSelf<'a> for Expression<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+
+        let comp_expr = ComparisonExpression::expect(ast)?;
+        Ok(Expression {
+            position: comp_expr.position,
+            sub_expressions: vec![],
+            main_expression: comp_expr,
+        })
+    }
+}
+
+impl<'a> TryParseSelf<'a> for ComparisonExpression<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+
+        let (comparison_type, position) = if ast.current_token.token_type
+            == TokenType::Keyword(KeywordTokenType::Not(NotKeywordTokenType::Not))
+        {
+            ast.next_token();
+            let inner = ComparisonExpression::expect(ast)?;
+            let position = inner.position;
+            (
+                ComparisonExpressionType::Not(NotKeywordTokenType::Not, Box::new(inner)),
+                position,
+            )
+        } else {
+            let arith = ArithmeticExpression::expect(ast)?;
+            let position = arith.position;
+
+            (
+                ComparisonExpressionType::ComparisonChain(Box::new(ComparisonChainExpression {
+                    position: arith.position,
+                    main_expression: arith,
+                    sub_expressions: vec![],
+                })),
+                position,
+            )
+        };
+        Ok(ComparisonExpression {
+            comparison_type,
+            position,
+        })
+    }
+}
+
+impl<'a> TryParseSelf<'a> for ArithmeticExpression<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+
+        let term = Term::expect(ast)?;
+        Ok(ArithmeticExpression {
+            position: term.position,
+            main_expression: term,
+            sub_expressions: vec![],
+        })
+    }
+}
+
+impl<'a> TryParseSelf<'a> for Term<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+
+        let factor = Factor::expect(ast)?;
+        let position = factor.position;
+        Ok(Term {
+            main_expression: factor,
+            sub_expressions: vec![],
+            position,
+        })
+    }
+}
+
+impl<'a> TryParseSelf<'a> for Factor<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+
+        let call = Call::expect(ast)?;
+        let position = call.position;
+        Ok(Factor {
+            factor_type: FactorType::Call(call),
+            position,
+        })
+    }
+}
+
+impl<'a> TryParseSelf<'a> for Call<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+        let atom = Atom::expect(ast)?;
+
+        ast.step_over_whitespace();
+        let mut params: Option<Vec<Expression<'a>>> = None;
+        if ast.current_token.token_type
+            == TokenType::Operator(OperatorTokenType::LParen(LParenOperatorTokenType::LParen))
+        {
+            ast.next_token();
+            params = Some(vec![]);
+            let expr = Expression::expect(ast)?;
+            params.as_mut().unwrap().push(expr);
+            ast.step_over_whitespace();
+            while ast.current_token.token_type
+                == TokenType::Operator(OperatorTokenType::Comma(CommaOperatorTokenType::Comma))
+            {
+                let next_expr = Expression::expect(ast)?;
+                params.as_mut().unwrap().push(next_expr);
+                ast.step_over_whitespace();
+            }
+            if ast.current_token.token_type
+                != TokenType::Operator(OperatorTokenType::RParen(RParenOperatorTokenType::RParen))
+            {
+                return Err(ParserError);
+            }
+            ast.next_token();
+        }
+        Ok(Call {
+            position: atom.position,
+            atom,
+            params,
+        })
+    }
+}
+
+impl<'a> TryParseSelf<'a> for Atom<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<Self> {
+        ast.step_over_whitespace();
+
+        let atom_type = match ast.current_token.token_type {
+            TokenType::Literal(LiteralTokenType::Int) => {
+                let value = parse_int(ast.current_token.contents);
+                if value > IBig::from(usize::MAX) {
+                    let idx = ast.program.big_int_literals.register_value(value);
+                    AtomType::Int(Int::Big(idx))
+                } else {
+                    AtomType::Int(Int::Small(value.try_into().unwrap()))
+                }
+            }
+            TokenType::Literal(LiteralTokenType::String) => {
+                let value = ast
+                    .current_token
+                    .contents
+                    .get(1..ast.current_token.contents.len() - 1)
+                    .unwrap_or("");
+                let idx = ast.program.string_literals.register_value(value);
+                AtomType::String(idx)
+            }
+            TokenType::Identifier => {
+                let idx = ast
+                    .program
+                    .identifier_literals
+                    .register_value(ast.current_token.contents);
+
+                AtomType::Identifier(idx)
+            }
+            _ => unreachable!(),
+        };
+        let position = NodePositionData {
+            index: ast.current_token.start.index,
+            column_number: ast.current_token.start.column_number,
+            line_number: ast.current_token.start.line_number,
+            len: ast.current_token.len,
+            contents: ast.current_token.contents,
+        };
+        ast.next_token();
+        Ok(Atom {
+            atom_type,
+            position,
+        })
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Ast<'a> {
     index: usize,
@@ -372,12 +650,7 @@ impl<'a> Ast<'a> {
     }
 
     pub fn parse(mut self) -> ParserResult<Program<'a>> {
-        self.expect_statements()?;
-        Ok(self.program)
-    }
-
-    fn expect_statements(&mut self) -> ParserResult<()> {
-        let first_statement = self.expect_statement()?;
+        let first_statement = Statement::expect(&mut self)?;
         self.program.statements.push(first_statement);
         while self.has_tokens_left() {
             if self.current_token.token_type != terminator() {
@@ -385,177 +658,10 @@ impl<'a> Ast<'a> {
             }
             self.next_token();
 
-            let next_statement = self.expect_statement()?;
+            let next_statement = Statement::expect(&mut self)?;
             self.program.statements.push(next_statement);
         }
-        Ok(())
-    }
-
-    fn expect_statement(&mut self) -> ParserResult<Statement<'a>> {
-        self.step_over_whitespace();
-        let expression = self.expect_expression()?;
-        Ok(Statement {
-            position: expression.position,
-            statement_type: StatementType::Expr(expression),
-        })
-    }
-
-    fn expect_expression(&mut self) -> ParserResult<Expression<'a>> {
-        self.step_over_whitespace();
-
-        let comp_expr = self.expect_comparison_expression()?;
-        Ok(Expression {
-            position: comp_expr.position,
-            sub_expressions: vec![],
-            main_expression: comp_expr,
-        })
-    }
-
-    fn expect_comparison_expression(&mut self) -> ParserResult<ComparisonExpression<'a>> {
-        self.step_over_whitespace();
-
-        let (comparison_type, position) = if self.current_token.token_type
-            == TokenType::Keyword(KeywordTokenType::Not(NotKeywordTokenType::Not))
-        {
-            self.next_token();
-            let inner = self.expect_comparison_expression()?;
-            let position = inner.position;
-            (
-                ComparisonExpressionType::Not(NotKeywordTokenType::Not, Box::new(inner)),
-                position,
-            )
-        } else {
-            let arith = self.expect_arithmetic_expression()?;
-            let position = arith.position;
-
-            (
-                ComparisonExpressionType::ComparisonChain(ComparisonChainExpression {
-                    position: arith.position,
-                    main_expression: arith,
-                    sub_expressions: vec![],
-                }),
-                position,
-            )
-        };
-        Ok(ComparisonExpression {
-            comparison_type,
-            position,
-        })
-    }
-
-    fn expect_arithmetic_expression(&mut self) -> ParserResult<ArithmeticExpression<'a>> {
-        self.step_over_whitespace();
-
-        let term = self.expect_term()?;
-        Ok(ArithmeticExpression {
-            position: term.position,
-            main_expression: term,
-            sub_expressions: vec![],
-        })
-    }
-
-    fn expect_term(&mut self) -> ParserResult<Term<'a>> {
-        self.step_over_whitespace();
-
-        let factor = self.expect_factor()?;
-        let position = factor.position;
-        Ok(Term {
-            main_expression: factor,
-            sub_expressions: vec![],
-            position,
-        })
-    }
-
-    fn expect_factor(&mut self) -> ParserResult<Factor<'a>> {
-        self.step_over_whitespace();
-
-        let call = self.expect_call()?;
-        let position = call.position;
-        Ok(Factor {
-            factor_type: FactorType::Call(call),
-            position,
-        })
-    }
-
-    fn expect_call(&mut self) -> ParserResult<Call<'a>> {
-        self.step_over_whitespace();
-        let atom = self.expect_atom()?;
-
-        self.step_over_whitespace();
-        let mut params: Option<Vec<Expression<'a>>> = None;
-        if self.current_token.token_type
-            == TokenType::Operator(OperatorTokenType::LParen(LParenOperatorTokenType::LParen))
-        {
-            self.next_token();
-            params = Some(vec![]);
-            let expr = self.expect_expression()?;
-            params.as_mut().unwrap().push(expr);
-            self.step_over_whitespace();
-            while self.current_token.token_type
-                == TokenType::Operator(OperatorTokenType::Comma(CommaOperatorTokenType::Comma))
-            {
-                let next_expr = self.expect_expression()?;
-                params.as_mut().unwrap().push(next_expr);
-                self.step_over_whitespace();
-            }
-            if self.current_token.token_type
-                != TokenType::Operator(OperatorTokenType::RParen(RParenOperatorTokenType::RParen))
-            {
-                return Err(ParserError);
-            }
-            self.next_token();
-        }
-        Ok(Call {
-            position: atom.position,
-            atom,
-            params,
-        })
-    }
-
-    fn expect_atom(&mut self) -> ParserResult<Atom<'a>> {
-        self.step_over_whitespace();
-
-        let atom_type = match self.current_token.token_type {
-            TokenType::Literal(LiteralTokenType::Int) => {
-                let value = parse_int(self.current_token.contents);
-                if value > IBig::from(usize::MAX) {
-                    let idx = self.program.big_int_literals.register_value(value.clone());
-                    AtomType::Int(Int::Big(idx))
-                } else {
-                    AtomType::Int(Int::Small(value.try_into().unwrap()))
-                }
-            }
-            TokenType::Literal(LiteralTokenType::String) => {
-                let value = self
-                    .current_token
-                    .contents
-                    .get(1..self.current_token.contents.len() - 1)
-                    .unwrap_or("");
-                let idx = self.program.string_literals.register_value(value);
-                AtomType::String(idx)
-            }
-            TokenType::Identifier => {
-                let idx = self
-                    .program
-                    .identifier_literals
-                    .register_value(self.current_token.contents);
-
-                AtomType::Identifier(idx)
-            }
-            _ => unreachable!(),
-        };
-        let position = NodePositionData {
-            index: self.current_token.start.index,
-            column_number: self.current_token.start.column_number,
-            line_number: self.current_token.start.line_number,
-            len: self.current_token.len,
-            contents: self.current_token.contents,
-        };
-        self.next_token();
-        Ok(Atom {
-            atom_type,
-            position,
-        })
+        Ok(self.program)
     }
 
     fn next_token(&mut self) {

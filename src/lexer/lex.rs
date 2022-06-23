@@ -240,12 +240,11 @@ pub(crate) enum AssignmentOperatorTokenType {
     StarAssign,
     SlashAssign,
     ProcentAssign,
-    BitShiftLeftAssign,
-    BitShiftRightAssign,
+    BitshiftLeftAssign,
+    BitshiftRightAssign,
     BitwiseAndAssign,
     BitwiseOrAssign,
     BitwiseXorAssign,
-    BitwiseNotAssign,
 }
 
 pub(crate) fn assign() -> TokenType {
@@ -286,13 +285,13 @@ pub(crate) fn procent_assign() -> TokenType {
 
 pub(crate) fn shl_assign() -> TokenType {
     TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitShiftLeftAssign,
+        AssignmentOperatorTokenType::BitshiftLeftAssign,
     ))
 }
 
 pub(crate) fn shr_assign() -> TokenType {
     TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitShiftRightAssign,
+        AssignmentOperatorTokenType::BitshiftRightAssign,
     ))
 }
 
@@ -314,24 +313,12 @@ pub(crate) fn bitwise_xor_assign() -> TokenType {
     ))
 }
 
-pub(crate) fn bitwise_not_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitwiseNotAssign,
-    ))
-}
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum ArithmeticOperatorTokenType {
     Unary(UnaryOperatorTokenType),
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
-    BitwiseNot,
-}
-
-pub(crate) fn bitwise_not() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Arithmetic(
-        ArithmeticOperatorTokenType::BitwiseNot,
-    ))
 }
 
 pub(crate) fn bitwise_xor() -> TokenType {
@@ -357,6 +344,7 @@ pub(crate) fn bitwise_and() -> TokenType {
 pub(crate) enum UnaryOperatorTokenType {
     Plus,
     Minus,
+    BitwiseNot,
 }
 
 pub(crate) fn plus() -> TokenType {
@@ -370,13 +358,20 @@ pub(crate) fn minus() -> TokenType {
         ArithmeticOperatorTokenType::Unary(UnaryOperatorTokenType::Minus),
     ))
 }
+
+pub(crate) fn bitwise_not() -> TokenType {
+    TokenType::Operator(OperatorTokenType::Arithmetic(
+        ArithmeticOperatorTokenType::Unary(UnaryOperatorTokenType::BitwiseNot),
+    ))
+}
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum TermOperatorTokenType {
     Star,
     Slash,
     Procent,
-    BitShiftLeft,
-    BitShiftRight,
+    BitshiftLeft,
+    BitshiftRight,
 }
 
 pub(crate) fn star() -> TokenType {
@@ -392,12 +387,12 @@ pub(crate) fn procent() -> TokenType {
 }
 
 pub(crate) fn shl() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::BitShiftLeft))
+    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::BitshiftLeft))
 }
 
 pub(crate) fn shr() -> TokenType {
     TokenType::Operator(OperatorTokenType::Term(
-        TermOperatorTokenType::BitShiftRight,
+        TermOperatorTokenType::BitshiftRight,
     ))
 }
 
@@ -1256,7 +1251,7 @@ impl<'a> Lexer<'a> {
         tag("\r", terminator()).boxed(),
         tag("\n", terminator()).boxed(),
 
-        
+
         tag("/=", slash_assign()).boxed(),
         tag("*=", star_assign()).boxed(),
         tag("%=", procent_assign()).boxed(),
@@ -1267,7 +1262,6 @@ impl<'a> Lexer<'a> {
         tag("-=", minus_assign()).boxed(),
         tag("&=", bitwise_and_assign()).boxed(),
         tag("|=", bitwise_or_assign()).boxed(),
-        tag("~=", bitwise_not_assign()).boxed(),
         tag("^=", bitwise_xor_assign()).boxed(),
         tag("=", assign()).boxed(),
 
@@ -1276,7 +1270,7 @@ impl<'a> Lexer<'a> {
         tag("/", slash()).boxed(),
         tag("*", star()).boxed(),
         tag("%", procent()).boxed(),
-        
+
         tag("&", bitwise_and()).boxed(),
         tag("|", bitwise_or()).boxed(),
         tag("~", bitwise_not()).boxed(),

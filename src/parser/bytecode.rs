@@ -1,13 +1,15 @@
 use core::panic;
 use std::{
     borrow::Cow,
+    cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display},
     hash::BuildHasherDefault,
 };
 const USIZE_BYTES: usize = (usize::BITS / 8) as usize;
+
 use super::{ast::GenerateBytecode, Statement};
-use ibig::IBig;
+use ibig::{ibig, IBig};
 use std::hash::Hash;
 use twox_hash::XxHash64;
 
@@ -89,7 +91,7 @@ pub(crate) fn generate_bytecode(statements: Vec<Statement>) -> Bytecode {
 use num_enum::TryFromPrimitive;
 // BYTECODE INSTRUCTIONS:
 #[repr(u8)]
-#[derive(Debug, TryFromPrimitive)]
+#[derive(Debug, TryFromPrimitive, PartialEq, Eq)]
 pub(crate) enum OpCodes {
     LoadSmallIntLiteral = 0,
     LoadBigIntLiteral,
@@ -105,7 +107,42 @@ pub(crate) enum OpCodes {
     Break,
     StartOfFunctionDefinition,
     EndOfFunctionDefinition,
-    SetVariableFromIndex,
+    Assign,
+    AddAndAssign,
+    SubAndAssign,
+    MultiplyAndAssign,
+    DivideAndAssign,
+    ModuloAndAssign,
+    BitwiseAndAndAssign,
+    BitwiseOrAndAssign,
+    BitwiseXorAndAssign,
+    BitshiftLeftAndAssign,
+    BitshiftRightAndAssign,
+    BooleanAnd,
+    BooleanOr,
+    BooleanNot,
+    Equals,
+    NotEquals,
+    GreaterThan,
+    GreaterThanEquals,
+    LessThan,
+    LessThanEquals,
+
+    UnaryPlus,
+    UnaryMinus,
+    BitwiseNot,
+
+    Add,
+    Sub,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+
+    Multiply,
+    Divide,
+    Modulo,
+    BitshiftLeft,
+    BitshiftRight,
 }
 
 impl Display for OpCodes {
@@ -204,14 +241,8 @@ impl<'a> BytecodeInterpreter<'a> {
                 let index = self.bytecode.read_usize(self.program_counter);
                 self.program_counter += USIZE_BYTES;
                 self.stack
-                    .push(self.find_var_by_index(index).unwrap().clone());
-            },
-            OpCodes::SetVariableFromIndex => {
-                self.program_counter += 1;
-                let index = self.bytecode.read_usize(self.program_counter);
-                self.program_counter += USIZE_BYTES;
-                
-            },
+                    .push(self.get_var_by_index(index).unwrap().clone());
+            }
             OpCodes::LoadStringLiteral => {
                 self.program_counter += 1;
                 let index = self.bytecode.read_usize(self.program_counter);
@@ -280,9 +311,355 @@ impl<'a> BytecodeInterpreter<'a> {
                     }
                 }
                 self.program_counter += 1;
-            },
-            
-            _ => todo!(),
+            }
+            OpCodes::Assign
+            | OpCodes::AddAndAssign
+            | OpCodes::SubAndAssign
+            | OpCodes::BitshiftLeftAndAssign
+            | OpCodes::BitshiftRightAndAssign
+            | OpCodes::BitwiseAndAndAssign
+            | OpCodes::BitwiseOrAndAssign
+            | OpCodes::BitwiseXorAndAssign
+            | OpCodes::DivideAndAssign
+            | OpCodes::MultiplyAndAssign
+            | OpCodes::ModuloAndAssign => {
+                macro_rules! assign_op {
+                    ($e: tt) => {
+                        {
+                            self.program_counter += 1;
+                            let from_stack_var = self.stack.pop().unwrap();
+                            let idx = self.bytecode.read_usize(self.program_counter);
+                            self.program_counter += USIZE_BYTES;
+                            let var = self.get_var_by_index_mut(idx).unwrap();
+                            match (var, from_stack_var) {
+                                (AnacondaValue::Int(val), AnacondaValue::Int(from_stack)) => {
+                                    if opcode == OpCodes::BitshiftLeftAndAssign {
+                                        *val *= ibig!(2).pow((from_stack % (IBig::from(usize::MAX) + 1usize)).try_into().unwrap())
+                                    }
+                                    else if opcode == OpCodes::BitshiftRightAndAssign {
+                                        *val /= ibig!(2).pow((from_stack % (IBig::from(usize::MAX) + 1usize)).try_into().unwrap())
+
+                                    } else {
+                                        let _ = *val $e from_stack;
+
+                                    }
+                                },
+                                (AnacondaValue::String(val), AnacondaValue::String(from_stack)) => {
+                                    if opcode == OpCodes::AddAndAssign {
+                                        val.to_mut().push_str(&from_stack);
+                                    } else if opcode == OpCodes::Assign {
+                                        *val = from_stack;
+                                    }
+                                    else {
+                                        panic!("Cannot perform operation {} on string.", stringify!($e))
+                                    }
+                                },
+                                (incorrect_1, incorrect_2) => {
+                                    panic!("Cannot perform operation {} on {incorrect_1} and {incorrect_2}", stringify!($e))
+                                }
+                            }
+
+                        }
+                }
+                }
+
+                match opcode {
+                    OpCodes::Assign => assign_op!(=),
+                    OpCodes::AddAndAssign => assign_op!(+=),
+                    OpCodes::SubAndAssign => assign_op!(-=),
+                    OpCodes::MultiplyAndAssign => assign_op!(*=),
+                    OpCodes::DivideAndAssign => assign_op!(/=),
+                    OpCodes::ModuloAndAssign => assign_op!(%=),
+                    /* These two don't matter because we handle them as special cases because IBig does not support <<= or >>= */
+                    OpCodes::BitshiftLeftAndAssign => assign_op!(!=),
+                    OpCodes::BitshiftRightAndAssign => assign_op!(==),
+                    /* END COMMENT */
+                    OpCodes::BitwiseAndAndAssign => assign_op!(&=),
+                    OpCodes::BitwiseOrAndAssign => assign_op!(|=),
+                    OpCodes::BitwiseXorAndAssign => assign_op!(^=),
+                    _ => unreachable!(),
+                }
+            }
+
+            OpCodes::BooleanAnd => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                if !first.as_bool() {
+                    self.stack.pop();
+                    self.stack.push(first);
+                }
+            }
+            OpCodes::BooleanOr => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                if first.as_bool() {
+                    self.stack.pop();
+                    self.stack.push(first);
+                }
+            }
+            OpCodes::BooleanNot => {
+                let val = self.stack.pop().unwrap();
+                let inverse = !val.as_bool();
+                self.stack.push(AnacondaValue::Bool(inverse));
+            }
+            OpCodes::PrintStack => println!("{:#?}", self.stack),
+            OpCodes::EndOfFunctionDefinition => {
+                panic!("Hit EndOfFunctionDefinition instruction. This should never happen.")
+            }
+            OpCodes::Break => todo!(),
+
+            OpCodes::Equals => {
+                self.program_counter += 1;
+
+                let first = self.stack.pop();
+                let second = self.stack.pop();
+                self.stack.push(AnacondaValue::Bool(first == second));
+            }
+            OpCodes::NotEquals => {
+                self.program_counter += 1;
+
+                let first = self.stack.pop();
+                let second = self.stack.pop();
+                self.stack.push(AnacondaValue::Bool(first != second));
+            }
+            OpCodes::GreaterThan => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                self.stack.push(AnacondaValue::Bool(match (first, second) {
+                    (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 > i2,
+                    (v1, v2) => {
+                        panic!("Gannot perform > operation on {v1} and {v2}")
+                    }
+                }))
+            }
+            OpCodes::GreaterThanEquals => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                self.stack.push(AnacondaValue::Bool(match (first, second) {
+                    (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 >= i2,
+                    (v1, v2) => {
+                        panic!("Gannot perform >= operation on {v1} and {v2}")
+                    }
+                }))
+            }
+            OpCodes::LessThan => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                self.stack.push(AnacondaValue::Bool(match (first, second) {
+                    (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 < i2,
+                    (v1, v2) => {
+                        panic!("Gannot perform < operation on {v1} and {v2}")
+                    }
+                }))
+            }
+            OpCodes::LessThanEquals => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                self.stack.push(AnacondaValue::Bool(match (first, second) {
+                    (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 <= i2,
+                    (v1, v2) => {
+                        panic!("Gannot perform <= operation on {v1} and {v2}")
+                    }
+                }))
+            }
+
+            OpCodes::UnaryPlus => {
+                self.program_counter += 1;
+                let val = self.stack.last_mut().unwrap();
+                if let AnacondaValue::Int(_) = val {
+                } else {
+                    panic!("Cannot perform unary plus operation on {val}.")
+                }
+            }
+            OpCodes::UnaryMinus => {
+                self.program_counter += 1;
+                let val = self.stack.last_mut().unwrap();
+                if let AnacondaValue::Int(i) = val {
+                    *i *= ibig!(-1);
+                } else {
+                    panic!("Cannot perform unary minus operation on {val}.")
+                }
+            }
+            OpCodes::BitwiseNot => {
+                self.program_counter += 1;
+                let val = self.stack.last_mut().unwrap();
+                if let AnacondaValue::Int(i) = val {
+                    *i *= ibig!(-1);
+                    *i -= ibig!(1);
+                } else {
+                    panic!("Cannot perform unary minus operation on {val}.")
+                }
+            }
+
+            OpCodes::BitwiseAnd => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 &= i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform & operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::BitwiseOr => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 |= i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform | operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::BitwiseXor => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 ^= i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform ^ operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::Add => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 += i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (AnacondaValue::String(mut s1), AnacondaValue::String(s2)) => {
+                        s1.to_mut().push_str(&s2);
+                        self.stack.push(AnacondaValue::String(s1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform + operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::Sub => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 -= i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform - operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::Multiply => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 *= i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (AnacondaValue::String(s), AnacondaValue::Int(i))
+                    | (AnacondaValue::Int(i), AnacondaValue::String(s)) => {
+                        match i.cmp(&ibig!(0)) {
+                            Ordering::Equal => {
+                                self.stack.push(AnacondaValue::String(Cow::Borrowed("")));
+                            }
+                            Ordering::Less => {
+                                panic!("Cannot multipy a string by a value less than 0");
+                            }
+                            Ordering::Greater => {
+                                let s = s.as_ref().repeat(i.try_into().unwrap_or(usize::MAX));
+                                self.stack.push(AnacondaValue::String(Cow::Owned(s)));
+                            }
+                        }
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform * operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::Divide => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        if i2 == ibig!(0) {
+                            panic!("Cannot divide by 0!");
+                        }
+                        i1 /= i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform / operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::Modulo => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 %= i2;
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform % operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::BitshiftLeft => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 *= ibig!(2)
+                            .pow((i2 % (IBig::from(usize::MAX) + 1usize)).try_into().unwrap());
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform << operation on {v1} and {v2}")
+                    }
+                }
+            }
+            OpCodes::BitshiftRight => {
+                self.program_counter += 1;
+                let first = self.stack.pop().unwrap();
+                let second = self.stack.pop().unwrap();
+                match (first, second) {
+                    (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
+                        i1 /= ibig!(2)
+                            .pow((i2 % (IBig::from(usize::MAX) + 1usize)).try_into().unwrap());
+
+                        self.stack.push(AnacondaValue::Int(i1));
+                    }
+                    (v1, v2) => {
+                        panic!("Cannot perform >> operation on {v1} and {v2}")
+                    }
+                }
+            }
         }
     }
 
@@ -309,7 +686,47 @@ impl<'a> BytecodeInterpreter<'a> {
             OpCodes::EndOfFunctionDefinition => 1,
             OpCodes::LoadStringLiteral => 1 + USIZE_BYTES,
             OpCodes::LoadNothing => 1,
-            OpCodes::SetVariableFromIndex => 1 + USIZE_BYTES,
+            OpCodes::Assign => 1 + USIZE_BYTES,
+            OpCodes::AddAndAssign => 1 + USIZE_BYTES,
+            OpCodes::SubAndAssign => 1 + USIZE_BYTES,
+            OpCodes::MultiplyAndAssign => 1 + USIZE_BYTES,
+            OpCodes::DivideAndAssign => 1 + USIZE_BYTES,
+            OpCodes::ModuloAndAssign => 1 + USIZE_BYTES,
+
+            OpCodes::BitwiseAndAndAssign => 1 + USIZE_BYTES,
+            OpCodes::BitwiseOrAndAssign => 1 + USIZE_BYTES,
+            OpCodes::BitwiseXorAndAssign => 1 + USIZE_BYTES,
+
+            OpCodes::BitshiftLeftAndAssign => 1 + USIZE_BYTES,
+            OpCodes::BitshiftRightAndAssign => 1 + USIZE_BYTES,
+
+            OpCodes::BooleanAnd => 1,
+            OpCodes::BooleanOr => 1,
+            OpCodes::BooleanNot => 1,
+
+            OpCodes::Equals => 1,
+            OpCodes::NotEquals => 1,
+            OpCodes::LessThan => 1,
+            OpCodes::LessThanEquals => 1,
+            OpCodes::GreaterThan => 1,
+            OpCodes::GreaterThanEquals => 1,
+
+            OpCodes::UnaryMinus => 1,
+            OpCodes::UnaryPlus => 1,
+            OpCodes::BitwiseNot => 1,
+
+            OpCodes::BitwiseOr => 1,
+            OpCodes::BitwiseXor => 1,
+            OpCodes::BitwiseAnd => 1,
+
+            OpCodes::Add => 1,
+            OpCodes::Sub => 1,
+
+            OpCodes::Modulo => 1,
+            OpCodes::Multiply => 1,
+            OpCodes::Divide => 1,
+            OpCodes::BitshiftLeft => 1,
+            OpCodes::BitshiftRight => 1,
         }
     }
 
@@ -320,7 +737,7 @@ impl<'a> BytecodeInterpreter<'a> {
     }
 
     fn identifier_to_function<'b>(&'b mut self, identifier: &'a str) -> &'b Function {
-        match self.find_var_by_identifier(identifier) {
+        match self.get_var_by_identifier(identifier) {
             Some(v) => match v {
                 AnacondaValue::Function(f) => f,
                 _ => panic!("Expected Function, found {v:#?}"),
@@ -331,7 +748,7 @@ impl<'a> BytecodeInterpreter<'a> {
         }
     }
 
-    fn find_var_by_index<'b>(&'b self, idx: usize) -> Option<&'b AnacondaValue<'a>> {
+    fn get_var_by_index<'b>(&'b self, idx: usize) -> Option<&'b AnacondaValue<'a>> {
         for i in (0..self.scopes.len()).rev() {
             let scope = &self.scopes[i];
             if let Some(v) = scope.variables.get(&idx) {
@@ -341,8 +758,39 @@ impl<'a> BytecodeInterpreter<'a> {
         None
     }
 
-    fn find_var_by_identifier<'b>(&'b self, ident: &'a str) -> Option<&'b AnacondaValue<'a>> {
-        self.find_var_by_index(*self.identifier_literals.reverse_data.get(ident).unwrap())
+    fn get_var_by_index_mut<'b>(&'b mut self, idx: usize) -> Option<&'b mut AnacondaValue<'a>> {
+        let this = self as *mut Self;
+        let len = self.scopes.len();
+        for i in (0..len).rev() {
+            let scope = unsafe { &mut (*this).scopes[i] as *mut Scope };
+            if let Some(v) = unsafe { (*scope).variables.get_mut(&idx) } {
+                return Some(v);
+            }
+        }
+        None
+    }
+
+    fn get_var_by_identifier<'b>(&'b self, ident: &'a str) -> Option<&'b AnacondaValue<'a>> {
+        self.get_var_by_index(*self.identifier_literals.reverse_data.get(ident).unwrap())
+    }
+
+    fn get_var_by_identifier_mut<'b>(
+        &'b mut self,
+        ident: &'a str,
+    ) -> Option<&'b mut AnacondaValue<'a>> {
+        self.get_var_by_index_mut(*self.identifier_literals.reverse_data.get(ident).unwrap())
+    }
+
+    fn set_var_by_index<'b>(&'b mut self, index: usize, val: AnacondaValue<'a>) {
+        for i in (0..self.scopes.len()).rev() {
+            let scope = &mut self.scopes[i];
+            if scope.variables.get(&index).is_some() {
+                scope.variables.insert(index, val);
+                return;
+            }
+        }
+        let len = self.scopes.len();
+        self.scopes[len - 1].variables.insert(index, val);
     }
 }
 
@@ -358,6 +806,7 @@ pub(crate) enum AnacondaValue<'a> {
     String(Cow<'a, str>),
     Function(Function),
     Identifier(&'a str),
+    Bool(bool),
     Nothing,
 }
 
@@ -369,6 +818,20 @@ impl<'a> Display for AnacondaValue<'a> {
             AnacondaValue::Int(i) => write!(f, "{i}"),
             AnacondaValue::Identifier(i) => write!(f, "{i}"),
             AnacondaValue::Function(fun) => write!(f, "{:#?}", fun),
+            AnacondaValue::Bool(b) => write!(f, "{b}"),
+        }
+    }
+}
+
+impl<'a> AnacondaValue<'a> {
+    fn as_bool(&self) -> bool {
+        match self {
+            AnacondaValue::Int(i) => *i != ibig!(0),
+            AnacondaValue::Nothing => false,
+            AnacondaValue::Function(_) => true,
+            AnacondaValue::Identifier(i) => !i.is_empty(),
+            AnacondaValue::String(s) => !s.is_empty(),
+            AnacondaValue::Bool(b) => *b,
         }
     }
 }

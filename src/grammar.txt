@@ -29,7 +29,7 @@ arith-expr = term ((operator+ | operator- | operator| | operator& | operator^ | 
 
 term = factor ((operator* | operator/ | operator>> | operator<<) factor)*
 
-factor = (operator+ | operator-) factor
+factor = (operator+ | operator- | operator~) factor
         | call
 
 call = atom ( operator:LPAREN (expr (operator:COMMA expr)*)? operator:RPAREN )?
