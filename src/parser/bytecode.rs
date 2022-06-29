@@ -6,25 +6,26 @@ use std::{
     fmt::{Debug, Display},
     hash::BuildHasherDefault,
 };
-const USIZE_BYTES: usize = (usize::BITS / 8) as usize;
+pub(crate) const USIZE_BYTES: usize = (usize::BITS / 8) as usize;
 
-use super::{ast::GenerateBytecode, Statement};
+use super::ast::{Ast, Block, GenerateBytecode};
 use ibig::{ibig, IBig};
 use std::hash::Hash;
 use twox_hash::XxHash64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Program<'a> {
-    pub(crate) statements: Vec<Statement<'a>>,
+    pub(crate) base_block: Option<Block<'a>>,
     pub(crate) big_int_literals: ValueStore<IBig>,
     pub(crate) string_literals: ValueStore<&'a str>,
     pub(crate) identifier_literals: ValueStore<&'a str>,
+    pub(crate) function_definitions: ValueStore<Function>,
 }
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) struct ValueStore<T: PartialEq + Eq + Hash + Debug + Clone> {
-    data: HashMap<usize, T, BuildHasherDefault<XxHash64>>,
-    reverse_data: HashMap<T, usize, BuildHasherDefault<XxHash64>>,
-    index: usize,
+    pub(crate) data: HashMap<usize, T, BuildHasherDefault<XxHash64>>,
+    pub(crate) reverse_data: HashMap<T, usize, BuildHasherDefault<XxHash64>>,
+    pub(crate) index: usize,
 }
 
 impl<T: PartialEq + Eq + Hash + Debug + Clone> ValueStore<T> {
@@ -54,7 +55,7 @@ pub(crate) struct Bytecode {
 }
 
 impl Bytecode {
-    pub(crate) fn push(&mut self, instruction: OpCodes) {
+    pub(crate) fn push_opcode(&mut self, instruction: OpCodes) {
         println!("Pushed instruction {instruction:#?} into bytecode");
         self.instructions.push(instruction as u8)
     }
@@ -81,11 +82,9 @@ impl Bytecode {
     }
 }
 
-pub(crate) fn generate_bytecode(statements: Vec<Statement>) -> Bytecode {
+pub(crate) fn generate_bytecode(ast: &mut Ast<'_>) -> Bytecode {
     let mut res = Bytecode::new();
-    for mut statement in statements {
-        statement.gen_bytecode(&mut res);
-    }
+    ast.program.base_block.clone().unwrap().gen_bytecode(&mut res, ast);
     res
 }
 use num_enum::TryFromPrimitive;
@@ -96,9 +95,11 @@ pub(crate) enum OpCodes {
     LoadSmallIntLiteral = 0,
     LoadBigIntLiteral,
     LoadStringLiteral,
-    LoadNameOfIdentifierFromIndex,
     LoadVariableValueFromIndex,
     LoadNothing,
+    LoadFalse,
+    LoadTrue,
+
     Print,
     CallFunction,
     Return,
@@ -107,6 +108,8 @@ pub(crate) enum OpCodes {
     Break,
     StartOfFunctionDefinition,
     EndOfFunctionDefinition,
+    BeginBlock,
+    EndBlock,
     Assign,
     AddAndAssign,
     SubAndAssign,
@@ -168,8 +171,10 @@ pub(crate) struct BytecodeInterpreter<'a> {
     pub(crate) big_int_literals: ValueStore<IBig>,
     pub(crate) string_literals: ValueStore<&'a str>,
     pub(crate) identifier_literals: ValueStore<&'a str>,
+    pub(crate) function_definitions: ValueStore<Function>,
     pub(crate) stack: Vec<AnacondaValue<'a>>,
     pub(crate) scopes: Vec<Scope<'a>>,
+    pub(crate) return_addresses: Vec<usize>,
 }
 
 impl<'a> BytecodeInterpreter<'a> {
@@ -178,32 +183,40 @@ impl<'a> BytecodeInterpreter<'a> {
             big_int_literals: program.big_int_literals,
             string_literals: program.string_literals,
             identifier_literals: program.identifier_literals,
+            function_definitions: program.function_definitions,
             program_counter: 0,
             bytecode,
             stack: vec![],
             scopes: vec![Scope::new()],
+            return_addresses: vec![],
         };
         this.add_builtins();
         this
     }
 
     fn add_builtins(&mut self) {
-        // + 1 because the function proper begins after the start function def opcode.
-        let print_start_index = self.bytecode.instructions.len() + 1;
+        // + 5 because the function proper begins after the start function def opcode.
+        let print_start_index = self.bytecode.instructions.len() + 1 + USIZE_BYTES;
         let idx = self.identifier_literals.register_value("value");
-        self.bytecode.push(OpCodes::StartOfFunctionDefinition);
-        self.bytecode.push(OpCodes::LoadVariableValueFromIndex);
-        self.bytecode.push_usize(idx);
-        self.bytecode.push(OpCodes::Print);
-        self.bytecode.push(OpCodes::LoadNothing);
-        self.bytecode.push(OpCodes::Return);
-        self.bytecode.push(OpCodes::EndOfFunctionDefinition);
-
         let print = Function {
             extra_args: false,
             params: vec![idx],
             start_index: print_start_index,
         };
+        let def_idx = self.function_definitions.register_value(print.clone());
+        self.bytecode
+            .push_opcode(OpCodes::StartOfFunctionDefinition);
+        self.bytecode.push_usize(def_idx);
+        self.bytecode
+            .push_opcode(OpCodes::LoadVariableValueFromIndex);
+        self.bytecode.push_usize(idx);
+        self.bytecode.push_opcode(OpCodes::Print);
+        self.bytecode.push_opcode(OpCodes::LoadNothing);
+        self.bytecode.push_opcode(OpCodes::EndBlock);
+        self.bytecode.push_opcode(OpCodes::Return);
+        self.bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
+        self.bytecode.push_opcode(OpCodes::Pop);
+
         let print_idx = self.identifier_literals.register_value("print");
         self.scopes[0]
             .variables
@@ -214,6 +227,7 @@ impl<'a> BytecodeInterpreter<'a> {
 
     fn interpret_next_instruction(&mut self) {
         let opcode = self.current_opcode();
+        println!("{:?}", opcode);
         match opcode {
             OpCodes::LoadSmallIntLiteral => {
                 self.program_counter += 1;
@@ -227,13 +241,6 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.program_counter += USIZE_BYTES;
                 let value = self.big_int_literals.data.get(&index).unwrap().clone();
                 self.stack.push(AnacondaValue::Int(value));
-            }
-            OpCodes::LoadNameOfIdentifierFromIndex => {
-                self.program_counter += 1;
-                let index = self.bytecode.read_usize(self.program_counter);
-                self.program_counter += USIZE_BYTES;
-                let name = self.identifier_literals.data.get(&index).unwrap();
-                self.stack.push(AnacondaValue::Identifier(name));
             }
 
             OpCodes::LoadVariableValueFromIndex => {
@@ -255,11 +262,9 @@ impl<'a> BytecodeInterpreter<'a> {
                 let args_len = self.bytecode.read_usize(self.program_counter);
                 self.program_counter += USIZE_BYTES;
                 let f = match self.stack.pop().unwrap() {
-                    AnacondaValue::Identifier(i) => self.identifier_to_function(i).clone(),
                     AnacondaValue::Function(f) => f,
                     invalid => panic!("{invalid:#?} is not a valid function"),
                 };
-                self.scopes.push(Scope::new());
                 let idx_of_last = self.scopes.len() - 1;
                 let newest_scope = &mut self.scopes[idx_of_last];
                 for i in (0..args_len).rev() {
@@ -268,8 +273,7 @@ impl<'a> BytecodeInterpreter<'a> {
                         .variables
                         .insert(idx_of_var, self.stack.pop().unwrap());
                 }
-                self.stack
-                    .push(AnacondaValue::Int(IBig::from(self.program_counter)));
+                self.return_addresses.push(self.program_counter);
                 self.program_counter = f.start_index;
             }
             OpCodes::Pop => {
@@ -277,19 +281,7 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.program_counter += 1;
             }
             OpCodes::Return => {
-                self.scopes.pop();
-                let return_value = self.stack.pop().unwrap();
-                let return_address = self.stack.pop().unwrap();
-                let return_address = match return_address {
-                    AnacondaValue::Int(i) => i,
-                    _ => {
-                        unreachable!()
-                    }
-                };
-                self.stack.push(return_value);
-                let u: usize = return_address.try_into().unwrap();
-
-                self.program_counter = u;
+                self.program_counter = self.return_addresses.pop().unwrap();
             }
             OpCodes::Print => {
                 let to_print = self.stack.pop().unwrap();
@@ -300,16 +292,40 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.stack.push(AnacondaValue::Nothing);
                 self.program_counter += 1;
             }
+            OpCodes::LoadTrue => {
+                self.stack.push(AnacondaValue::Bool(true));
+                self.program_counter += 1;
+            }
+            OpCodes::LoadFalse => {
+                self.stack.push(AnacondaValue::Bool(false));
+                self.program_counter += 1;
+            }
             OpCodes::StartOfFunctionDefinition => {
+                self.program_counter += 1;
+                let idx = self.bytecode.read_usize(self.program_counter);
+                self.program_counter += USIZE_BYTES;
+                self.stack.push(AnacondaValue::Function(
+                    self.function_definitions.data.get(&idx).unwrap().clone(),
+                ));
+
+                // Skip through the rest of the function.
                 let mut start_vs_end = 1isize;
                 while start_vs_end > 0 {
-                    self.program_counter += self.current_opcode_len();
                     match self.current_opcode() {
                         OpCodes::StartOfFunctionDefinition => start_vs_end += 1,
                         OpCodes::EndOfFunctionDefinition => start_vs_end -= 1,
                         _ => (),
-                    }
+                    };
+                    self.program_counter += self.current_opcode_len();
                 }
+            }
+
+            OpCodes::BeginBlock => {
+                self.scopes.push(Scope::new());
+                self.program_counter += 1;
+            }
+            OpCodes::EndBlock => {
+                self.scopes.pop();
                 self.program_counter += 1;
             }
             OpCodes::Assign
@@ -330,7 +346,8 @@ impl<'a> BytecodeInterpreter<'a> {
                             let from_stack_var = self.stack.pop().unwrap();
                             let idx = self.bytecode.read_usize(self.program_counter);
                             self.program_counter += USIZE_BYTES;
-                            let var = self.get_var_by_index_mut(idx).unwrap();
+                            let var = self.get_var_by_index_mut(idx);
+
                             match (var, from_stack_var) {
                                 (AnacondaValue::Int(val), AnacondaValue::Int(from_stack)) => {
                                     if opcode == OpCodes::BitshiftLeftAndAssign {
@@ -354,8 +371,13 @@ impl<'a> BytecodeInterpreter<'a> {
                                         panic!("Cannot perform operation {} on string.", stringify!($e))
                                     }
                                 },
-                                (incorrect_1, incorrect_2) => {
-                                    panic!("Cannot perform operation {} on {incorrect_1} and {incorrect_2}", stringify!($e))
+                                (other_1, other_2) => {
+                                    if opcode == OpCodes::Assign {
+                                        *other_1 = other_2;
+                                    } else {
+                                        panic!("Cannot perform operation {} on {other_1} and {other_2}", stringify!($e))
+
+                                    }
                                 }
                             }
 
@@ -383,26 +405,34 @@ impl<'a> BytecodeInterpreter<'a> {
 
             OpCodes::BooleanAnd => {
                 self.program_counter += 1;
+                let second = self.stack.pop().unwrap();
                 let first = self.stack.pop().unwrap();
                 if !first.as_bool() {
-                    self.stack.pop();
                     self.stack.push(first);
+                } else {
+                    self.stack.push(second);
                 }
             }
             OpCodes::BooleanOr => {
                 self.program_counter += 1;
+                let second = self.stack.pop().unwrap();
                 let first = self.stack.pop().unwrap();
                 if first.as_bool() {
-                    self.stack.pop();
                     self.stack.push(first);
+                } else {
+                    self.stack.push(second);
                 }
             }
             OpCodes::BooleanNot => {
+                self.program_counter += 1;
                 let val = self.stack.pop().unwrap();
                 let inverse = !val.as_bool();
                 self.stack.push(AnacondaValue::Bool(inverse));
             }
-            OpCodes::PrintStack => println!("{:#?}", self.stack),
+            OpCodes::PrintStack => {
+                self.program_counter += 1;
+                println!("{:#?}", self.stack)
+            }
             OpCodes::EndOfFunctionDefinition => {
                 panic!("Hit EndOfFunctionDefinition instruction. This should never happen.")
             }
@@ -410,24 +440,24 @@ impl<'a> BytecodeInterpreter<'a> {
 
             OpCodes::Equals => {
                 self.program_counter += 1;
-
-                let first = self.stack.pop();
                 let second = self.stack.pop();
+                let first = self.stack.pop();
                 self.stack.push(AnacondaValue::Bool(first == second));
             }
             OpCodes::NotEquals => {
                 self.program_counter += 1;
 
-                let first = self.stack.pop();
                 let second = self.stack.pop();
+                let first = self.stack.pop();
                 self.stack.push(AnacondaValue::Bool(first != second));
             }
             OpCodes::GreaterThan => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 self.stack.push(AnacondaValue::Bool(match (first, second) {
                     (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 > i2,
+                    (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => b1 & !b2,
                     (v1, v2) => {
                         panic!("Gannot perform > operation on {v1} and {v2}")
                     }
@@ -435,10 +465,11 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::GreaterThanEquals => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 self.stack.push(AnacondaValue::Bool(match (first, second) {
                     (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 >= i2,
+                    (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => b1 >= b2,
                     (v1, v2) => {
                         panic!("Gannot perform >= operation on {v1} and {v2}")
                     }
@@ -446,10 +477,11 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::LessThan => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 self.stack.push(AnacondaValue::Bool(match (first, second) {
                     (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 < i2,
+                    (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => !b1 & b2,
                     (v1, v2) => {
                         panic!("Gannot perform < operation on {v1} and {v2}")
                     }
@@ -457,10 +489,12 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::LessThanEquals => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 self.stack.push(AnacondaValue::Bool(match (first, second) {
                     (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 <= i2,
+                    (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => b1 <= b2,
+
                     (v1, v2) => {
                         panic!("Gannot perform <= operation on {v1} and {v2}")
                     }
@@ -491,14 +525,14 @@ impl<'a> BytecodeInterpreter<'a> {
                     *i *= ibig!(-1);
                     *i -= ibig!(1);
                 } else {
-                    panic!("Cannot perform unary minus operation on {val}.")
+                    panic!("Cannot perform unary bitwise not operation on {val}.")
                 }
             }
 
             OpCodes::BitwiseAnd => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 &= i2;
@@ -511,8 +545,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::BitwiseOr => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 |= i2;
@@ -525,8 +559,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::BitwiseXor => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 ^= i2;
@@ -539,8 +573,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::Add => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 += i2;
@@ -557,8 +591,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::Sub => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 -= i2;
@@ -571,28 +605,26 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::Multiply => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 *= i2;
                         self.stack.push(AnacondaValue::Int(i1));
                     }
                     (AnacondaValue::String(s), AnacondaValue::Int(i))
-                    | (AnacondaValue::Int(i), AnacondaValue::String(s)) => {
-                        match i.cmp(&ibig!(0)) {
-                            Ordering::Equal => {
-                                self.stack.push(AnacondaValue::String(Cow::Borrowed("")));
-                            }
-                            Ordering::Less => {
-                                panic!("Cannot multipy a string by a value less than 0");
-                            }
-                            Ordering::Greater => {
-                                let s = s.as_ref().repeat(i.try_into().unwrap_or(usize::MAX));
-                                self.stack.push(AnacondaValue::String(Cow::Owned(s)));
-                            }
+                    | (AnacondaValue::Int(i), AnacondaValue::String(s)) => match i.cmp(&ibig!(0)) {
+                        Ordering::Equal => {
+                            self.stack.push(AnacondaValue::String(Cow::Borrowed("")));
                         }
-                    }
+                        Ordering::Less => {
+                            panic!("Cannot multipy a string by a value less than 0");
+                        }
+                        Ordering::Greater => {
+                            let s = s.as_ref().repeat(i.try_into().unwrap_or(usize::MAX));
+                            self.stack.push(AnacondaValue::String(Cow::Owned(s)));
+                        }
+                    },
                     (v1, v2) => {
                         panic!("Cannot perform * operation on {v1} and {v2}")
                     }
@@ -600,8 +632,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::Divide => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         if i2 == ibig!(0) {
@@ -617,8 +649,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::Modulo => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 %= i2;
@@ -631,8 +663,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::BitshiftLeft => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 *= ibig!(2)
@@ -646,8 +678,8 @@ impl<'a> BytecodeInterpreter<'a> {
             }
             OpCodes::BitshiftRight => {
                 self.program_counter += 1;
-                let first = self.stack.pop().unwrap();
                 let second = self.stack.pop().unwrap();
+                let first = self.stack.pop().unwrap();
                 match (first, second) {
                     (AnacondaValue::Int(mut i1), AnacondaValue::Int(i2)) => {
                         i1 /= ibig!(2)
@@ -676,14 +708,15 @@ impl<'a> BytecodeInterpreter<'a> {
             OpCodes::CallFunction => 1 + USIZE_BYTES,
             OpCodes::LoadBigIntLiteral => 1 + USIZE_BYTES,
             OpCodes::LoadSmallIntLiteral => 1 + USIZE_BYTES,
-            OpCodes::LoadNameOfIdentifierFromIndex => 1 + USIZE_BYTES,
             OpCodes::LoadVariableValueFromIndex => 1 + USIZE_BYTES,
             OpCodes::Pop => 1,
             OpCodes::Print => 1,
             OpCodes::PrintStack => 1,
             OpCodes::Return => 1,
-            OpCodes::StartOfFunctionDefinition => 1,
+            OpCodes::StartOfFunctionDefinition => 1 + USIZE_BYTES,
             OpCodes::EndOfFunctionDefinition => 1,
+            OpCodes::BeginBlock => 1,
+            OpCodes::EndBlock => 1,
             OpCodes::LoadStringLiteral => 1 + USIZE_BYTES,
             OpCodes::LoadNothing => 1,
             OpCodes::Assign => 1 + USIZE_BYTES,
@@ -727,6 +760,9 @@ impl<'a> BytecodeInterpreter<'a> {
             OpCodes::Divide => 1,
             OpCodes::BitshiftLeft => 1,
             OpCodes::BitshiftRight => 1,
+
+            OpCodes::LoadFalse => 1,
+            OpCodes::LoadTrue => 1,
         }
     }
 
@@ -758,26 +794,26 @@ impl<'a> BytecodeInterpreter<'a> {
         None
     }
 
-    fn get_var_by_index_mut<'b>(&'b mut self, idx: usize) -> Option<&'b mut AnacondaValue<'a>> {
+    fn get_var_by_index_mut<'b>(&'b mut self, idx: usize) -> &'b mut AnacondaValue<'a> {
         let this = self as *mut Self;
         let len = self.scopes.len();
         for i in (0..len).rev() {
             let scope = unsafe { &mut (*this).scopes[i] as *mut Scope };
             if let Some(v) = unsafe { (*scope).variables.get_mut(&idx) } {
-                return Some(v);
+                return v;
             }
         }
-        None
+        self.scopes[len - 1]
+            .variables
+            .insert(idx, AnacondaValue::Nothing);
+        self.scopes[len - 1].variables.get_mut(&idx).unwrap()
     }
 
     fn get_var_by_identifier<'b>(&'b self, ident: &'a str) -> Option<&'b AnacondaValue<'a>> {
         self.get_var_by_index(*self.identifier_literals.reverse_data.get(ident).unwrap())
     }
 
-    fn get_var_by_identifier_mut<'b>(
-        &'b mut self,
-        ident: &'a str,
-    ) -> Option<&'b mut AnacondaValue<'a>> {
+    fn get_var_by_identifier_mut<'b>(&'b mut self, ident: &'a str) -> &'b mut AnacondaValue<'a> {
         self.get_var_by_index_mut(*self.identifier_literals.reverse_data.get(ident).unwrap())
     }
 
@@ -794,18 +830,17 @@ impl<'a> BytecodeInterpreter<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Function {
-    params: Vec<usize>,
-    extra_args: bool,
-    start_index: usize,
+    pub(crate) params: Vec<usize>,
+    pub(crate) extra_args: bool,
+    pub(crate) start_index: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum AnacondaValue<'a> {
     Int(IBig),
     String(Cow<'a, str>),
     Function(Function),
-    Identifier(&'a str),
     Bool(bool),
     Nothing,
 }
@@ -816,7 +851,6 @@ impl<'a> Display for AnacondaValue<'a> {
             AnacondaValue::Nothing => write!(f, "Nothing"),
             AnacondaValue::String(s) => write!(f, "\"{s}\""),
             AnacondaValue::Int(i) => write!(f, "{i}"),
-            AnacondaValue::Identifier(i) => write!(f, "{i}"),
             AnacondaValue::Function(fun) => write!(f, "{:#?}", fun),
             AnacondaValue::Bool(b) => write!(f, "{b}"),
         }
@@ -829,7 +863,6 @@ impl<'a> AnacondaValue<'a> {
             AnacondaValue::Int(i) => *i != ibig!(0),
             AnacondaValue::Nothing => false,
             AnacondaValue::Function(_) => true,
-            AnacondaValue::Identifier(i) => !i.is_empty(),
             AnacondaValue::String(s) => !s.is_empty(),
             AnacondaValue::Bool(b) => *b,
         }

@@ -1,8 +1,9 @@
-if meta('main'):
-    main()
 
-fun main():
+main = fun ()
     num = 0
-    loop:
+    loop
         print(num)
         num = (num + 1) % 10
+
+if meta('is_main_file')
+    main()

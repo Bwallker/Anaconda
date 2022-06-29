@@ -1,6 +1,5 @@
 mod lexer;
 mod parser;
-
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::eyre;
 use parser::bytecode::{generate_bytecode, BytecodeInterpreter};
@@ -131,15 +130,16 @@ fn run() -> color_eyre::Result<()> {
                 ))
                 }
             };
-            let program = parse(&contents);
-            match program {
-                Ok(v) => {
-                    println!("{v:#?}");
-                    println!("{:#?}", generate_bytecode(v.statements))
+            let ast = parse(&contents);
+            match ast {
+                Ok(mut v) => {
+                    let bytecode = generate_bytecode(&mut v);
+                    std::fs::write("ast.txt", format!("{v:#?}"))?;
+                    std::fs::write("bytecode.txt", format!("{bytecode:#?}"))?;
                 }
                 Err(e) => return Err(eyre!(format!("{e}"))),
             }
-        },
+        }
         Commands::Run(r) => {
             let contents = match (r.program, r.program_path) {
                 (None, None) => {
@@ -155,15 +155,13 @@ fn run() -> color_eyre::Result<()> {
                 ))
                 }
             };
-            let program = parse(&contents);
-            let program = match program {
-                Ok(v) => {
-                    v
-                }
+            let ast = parse(&contents);
+            let mut ast = match ast {
+                Ok(v) => v,
                 Err(e) => return Err(eyre!(format!("{e}"))),
             };
-            let bytecode = generate_bytecode(program.statements.clone());
-            let mut bytecode_interpreter = BytecodeInterpreter::new(program, bytecode);
+            let bytecode = generate_bytecode(&mut ast);
+            let mut bytecode_interpreter = BytecodeInterpreter::new(ast.program, bytecode);
             bytecode_interpreter.interpret_bytecode();
         }
     }

@@ -73,40 +73,63 @@ pub(crate) enum TokenType {
     Operator(OperatorTokenType),
     Literal(LiteralTokenType),
     Whitespace,
-    Identifier,
     Keyword(KeywordTokenType),
 }
 
-pub(crate) fn eoi() -> TokenType {
-    TokenType::Eoi
+macro_rules! eoi {
+    () => {
+        crate::lexer::lex::TokenType::Eoi
+    };
 }
 
-pub(crate) fn identifier() -> TokenType {
-    TokenType::Identifier
+pub(crate) use eoi;
+
+macro_rules! white_space {
+    () => {
+        crate::lexer::lex::TokenType::Whitespace
+    };
 }
 
-pub(crate) fn white_space() -> TokenType {
-    TokenType::Whitespace
-}
+pub(crate) use white_space;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum LiteralTokenType {
     Int,
     Decimal,
     String,
+    Identifier,
 }
 
-pub(crate) fn int() -> TokenType {
-    TokenType::Literal(LiteralTokenType::Int)
+macro_rules! identifier {
+    () => {
+        crate::lexer::lex::TokenType::Literal(crate::lexer::lex::LiteralTokenType::Identifier)
+    };
 }
 
-pub(crate) fn string() -> TokenType {
-    TokenType::Literal(LiteralTokenType::String)
+pub(crate) use identifier;
+
+macro_rules! int {
+    () => {
+        crate::lexer::lex::TokenType::Literal(crate::lexer::lex::LiteralTokenType::Int)
+    };
+}
+pub(crate) use int;
+
+macro_rules! string {
+    () => {
+        crate::lexer::lex::TokenType::Literal(crate::lexer::lex::LiteralTokenType::String)
+    };
 }
 
-pub(crate) fn decimal() -> TokenType {
-    TokenType::Literal(LiteralTokenType::Decimal)
+pub(crate) use string;
+
+macro_rules! decimal {
+    () => {
+        crate::lexer::lex::TokenType::Literal(crate::lexer::lex::LiteralTokenType::Decimal)
+    };
 }
+
+pub(crate) use decimal;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum CommentTokenType {
@@ -115,21 +138,64 @@ pub(crate) enum CommentTokenType {
     DocsLine,
     DocsBlock,
 }
-pub(crate) fn line_comment() -> TokenType {
-    TokenType::Comment(CommentTokenType::Line)
+
+macro_rules! comment_tt {
+    () => {
+        crate::lexer::lex::TokenType::Comment(_)
+    };
 }
 
-pub(crate) fn block_comment() -> TokenType {
-    TokenType::Comment(CommentTokenType::Block)
+pub(crate) use comment_tt;
+
+macro_rules! line_comment_tt {
+    () => {
+        crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::Line)
+            | crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::DocsLine)
+    };
 }
 
-pub(crate) fn docs_line_comment() -> TokenType {
-    TokenType::Comment(CommentTokenType::DocsLine)
+pub(crate) use line_comment_tt;
+
+macro_rules! block_comment_tt {
+    () => {
+        crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::Block)
+            | crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::DocsBlock)
+    };
 }
 
-pub(crate) fn docs_block_comment() -> TokenType {
-    TokenType::Comment(CommentTokenType::DocsBlock)
+pub(crate) use block_comment_tt;
+
+macro_rules! normal_line_comment {
+    () => {
+        crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::Line)
+    };
 }
+
+pub(crate) use normal_line_comment;
+
+macro_rules! normal_block_comment {
+    () => {
+        crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::Block)
+    };
+}
+
+pub(crate) use normal_block_comment;
+
+macro_rules! docs_line_comment {
+    () => {
+        crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::DocsLine)
+    };
+}
+
+pub(crate) use docs_line_comment;
+
+macro_rules! docs_block_comment {
+    () => {
+        crate::lexer::lex::TokenType::Comment(crate::lexer::lex::CommentTokenType::DocsBlock)
+    };
+}
+
+pub(crate) use docs_block_comment;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum KeywordTokenType {
@@ -139,24 +205,63 @@ pub(crate) enum KeywordTokenType {
     Statement(StatementKeywordTokenType),
     FunctionDefinition(FunctionDefinitionKeywordTokenType),
     Loop(LoopKeywordTokenType),
+    Value(ValueKeywordTokenType),
 }
+
+macro_rules! keyword_tt {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(_)
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Keyword($i)
+    };
+}
+
+pub(crate) use keyword_tt;
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum BooleanComparisonKeywordTokenType {
     And,
     Or,
 }
 
-pub(crate) fn and() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::BooleanComparison(
-        BooleanComparisonKeywordTokenType::And,
-    ))
+macro_rules! bool_comp_kw_tt {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::BooleanComparison(_),
+        )
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::BooleanComparison($i),
+        )
+    };
 }
 
-pub(crate) fn or() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::BooleanComparison(
-        BooleanComparisonKeywordTokenType::Or,
-    ))
+pub(crate) use bool_comp_kw_tt;
+
+macro_rules! and {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::BooleanComparison(
+                crate::lexer::lex::BooleanComparisonKeywordTokenType::And,
+            ),
+        )
+    };
 }
+
+pub(crate) use and;
+
+macro_rules! or {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::BooleanComparison(
+                crate::lexer::lex::BooleanComparisonKeywordTokenType::Or,
+            ),
+        )
+    };
+}
+
+pub(crate) use or;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum IfKeywordTokenType {
@@ -164,28 +269,58 @@ pub(crate) enum IfKeywordTokenType {
     Elif,
     Else,
 }
+macro_rules! if_kw_tt {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::If(_))
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::If($i))
+    };
+}
+pub(crate) use if_kw_tt;
 
-pub(crate) fn if_() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::If(IfKeywordTokenType::If))
+macro_rules! if_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::If(
+            crate::lexer::lex::IfKeywordTokenType::If,
+        ))
+    };
 }
 
-pub(crate) fn elif() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::If(IfKeywordTokenType::Elif))
+pub(crate) use if_;
+
+macro_rules! elif {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::If(
+            crate::lexer::lex::IfKeywordTokenType::Elif,
+        ))
+    };
 }
 
-pub(crate) fn else_() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::If(IfKeywordTokenType::Else))
+pub(crate) use elif;
+
+macro_rules! else_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::If(
+            crate::lexer::lex::IfKeywordTokenType::Else,
+        ))
+    };
 }
+
+pub(crate) use else_;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum NotKeywordTokenType {
     Not,
 }
 
-pub(crate) fn not() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::Not(NotKeywordTokenType::Not))
+macro_rules! not {
+    () => {
+        TokenType::Keyword(KeywordTokenType::Not(NotKeywordTokenType::Not))
+    };
 }
 
+pub(crate) use not;
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum StatementKeywordTokenType {
     Continue,
@@ -193,42 +328,144 @@ pub(crate) enum StatementKeywordTokenType {
     Return,
 }
 
-pub(crate) fn continue_() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::Statement(
-        StatementKeywordTokenType::Continue,
-    ))
+macro_rules! statement_kw_tt {
+    () => {
+        crate::lexer::lex::KeywordTokenType::Statement(_)
+    };
+    ($i: ident) => {
+        crate::lexer::lex::KeywordTokenType::Statement($i)
+    };
+}
+pub(crate) use statement_kw_tt;
+
+macro_rules! continue_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Statement(
+            crate::lexer::lex::StatementKeywordTokenType::Continue,
+        ))
+    };
 }
 
-pub(crate) fn break_() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::Statement(
-        StatementKeywordTokenType::Break,
-    ))
+pub(crate) use continue_;
+
+macro_rules! break_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Statement(
+            crate::lexer::lex::StatementKeywordTokenType::Break,
+        ))
+    };
 }
 
-pub(crate) fn return_() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::Statement(
-        StatementKeywordTokenType::Return,
-    ))
+pub(crate) use break_;
+
+macro_rules! return_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Statement(
+            crate::lexer::lex::StatementKeywordTokenType::Return,
+        ))
+    };
 }
+
+pub(crate) use return_;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum FunctionDefinitionKeywordTokenType {
     Fun,
 }
 
-pub(crate) fn fun() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::FunctionDefinition(
-        FunctionDefinitionKeywordTokenType::Fun,
-    ))
+macro_rules! fun {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::FunctionDefinition(
+                crate::lexer::lex::FunctionDefinitionKeywordTokenType::Fun,
+            ),
+        )
+    };
 }
+
+pub(crate) use fun;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum LoopKeywordTokenType {
     Loop,
 }
 
-pub(crate) fn loop_() -> TokenType {
-    TokenType::Keyword(KeywordTokenType::Loop(LoopKeywordTokenType::Loop))
+macro_rules! loop_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Loop(
+            LoopKeywordTokenType::Loop,
+        ))
+    };
+}
+
+pub(crate) use loop_;
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum ValueKeywordTokenType {
+    Nothing,
+    False,
+    True,
+}
+
+macro_rules! nothing {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Value(
+            crate::lexer::lex::ValueKeywordTokenType::Nothing,
+        ))
+    };
+}
+
+pub(crate) use nothing;
+
+macro_rules! false_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Value(
+            crate::lexer::lex::ValueKeywordTokenType::False,
+        ))
+    };
+}
+
+pub(crate) use false_;
+
+macro_rules! true_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Value(
+            crate::lexer::lex::ValueKeywordTokenType::True,
+        ))
+    };
+}
+
+pub(crate) use true_;
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum OperatorTokenType {
+    Assignment(AssignmentOperatorTokenType),
+    Arithmetic(ArithmeticOperatorTokenType),
+    Comparison(ComparisonOperatorTokenType),
+    Term(TermOperatorTokenType),
+    // Structural.
+    Comma(CommaOperatorTokenType),
+    LParen(LParenOperatorTokenType),
+    RParen(RParenOperatorTokenType),
+    LSquare(LSquareOperatorTokenType),
+    RSquare(RSquareOperatorTokenType),
+    Terminator(TerminatorOperatorTokenType),
+    Colon(ColonOperatorTokenType),
+}
+impl TryFrom<TokenType> for OperatorTokenType {
+    type Error = ();
+
+    fn try_from(value: TokenType) -> Result<Self, Self::Error> {
+        match value {
+            TokenType::Operator(o) => Ok(o),
+            _ => Err(()),
+        }
+    }
+}
+
+macro_rules! operator_tt {
+    () => {
+        crate::lexer::lex::TokenType::Operator(_)
+    };
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -247,71 +484,138 @@ pub(crate) enum AssignmentOperatorTokenType {
     BitwiseXorAssign,
 }
 
-pub(crate) fn assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::Assign,
-    ))
+impl TryFrom<OperatorTokenType> for AssignmentOperatorTokenType {
+    type Error = ();
+    fn try_from(value: OperatorTokenType) -> Result<Self, Self::Error> {
+        match value {
+            OperatorTokenType::Assignment(assignment_operator_token_type) => {
+                Ok(assignment_operator_token_type)
+            }
+            _ => Err(()),
+        }
+    }
 }
 
-pub(crate) fn plus_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::PlusAssign,
-    ))
+macro_rules! assignment_operator_tt {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(_))
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment($i))
+    };
 }
 
-pub(crate) fn minus_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::MinusAssign,
-    ))
+pub(crate) use assignment_operator_tt;
+
+macro_rules! assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::Assign,
+        ))
+    };
 }
 
-pub(crate) fn star_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::StarAssign,
-    ))
+pub(crate) use assign;
+
+macro_rules! plus_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::PlusAssign,
+        ))
+    };
 }
 
-pub(crate) fn slash_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::SlashAssign,
-    ))
+pub(crate) use plus_assign;
+
+macro_rules! minus_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::MinusAssign,
+        ))
+    };
 }
 
-pub(crate) fn procent_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::ProcentAssign,
-    ))
+pub(crate) use minus_assign;
+
+macro_rules! star_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::StarAssign,
+        ))
+    };
 }
 
-pub(crate) fn shl_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitshiftLeftAssign,
-    ))
+pub(crate) use star_assign;
+
+macro_rules! slash_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::SlashAssign,
+        ))
+    };
 }
 
-pub(crate) fn shr_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitshiftRightAssign,
-    ))
+pub(crate) use slash_assign;
+
+macro_rules! procent_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::ProcentAssign,
+        ))
+    };
 }
 
-pub(crate) fn bitwise_and_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitwiseAndAssign,
-    ))
+pub(crate) use procent_assign;
+
+macro_rules! bitshift_left_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::BitshiftLeftAssign,
+        ))
+    };
 }
 
-pub(crate) fn bitwise_or_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitwiseOrAssign,
-    ))
+pub(crate) use bitshift_left_assign;
+
+macro_rules! bitshift_right_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::BitshiftRightAssign,
+        ))
+    };
 }
 
-pub(crate) fn bitwise_xor_assign() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Assignment(
-        AssignmentOperatorTokenType::BitwiseXorAssign,
-    ))
+pub(crate) use bitshift_right_assign;
+
+macro_rules! bitwise_and_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::BitwiseAndAssign,
+        ))
+    };
 }
+
+pub(crate) use bitwise_and_assign;
+
+macro_rules! bitwise_or_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::BitwiseOrAssign,
+        ))
+    };
+}
+
+pub(crate) use bitwise_or_assign;
+
+macro_rules! bitwise_xor_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::BitwiseXorAssign,
+        ))
+    };
+}
+
+pub(crate) use bitwise_xor_assign;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum ArithmeticOperatorTokenType {
@@ -321,23 +625,46 @@ pub(crate) enum ArithmeticOperatorTokenType {
     BitwiseXor,
 }
 
-pub(crate) fn bitwise_xor() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Arithmetic(
-        ArithmeticOperatorTokenType::BitwiseXor,
-    ))
+macro_rules! arithmetic_operator_tt {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(_))
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic($i))
+    };
 }
 
-pub(crate) fn bitwise_or() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Arithmetic(
-        ArithmeticOperatorTokenType::BitwiseOr,
-    ))
+pub(crate) use arithmetic_operator_tt;
+
+macro_rules! bitwise_xor {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::BitwiseXor,
+        ))
+    };
 }
 
-pub(crate) fn bitwise_and() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Arithmetic(
-        ArithmeticOperatorTokenType::BitwiseAnd,
-    ))
+pub(crate) use bitwise_xor;
+
+macro_rules! bitwise_or {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::BitwiseOr,
+        ))
+    };
 }
+
+pub(crate) use bitwise_or;
+
+macro_rules! bitwise_and {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::BitwiseAnd,
+        ))
+    };
+}
+
+pub(crate) use bitwise_and;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 
@@ -347,54 +674,126 @@ pub(crate) enum UnaryOperatorTokenType {
     BitwiseNot,
 }
 
-pub(crate) fn plus() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Arithmetic(
-        ArithmeticOperatorTokenType::Unary(UnaryOperatorTokenType::Plus),
-    ))
+macro_rules! unary_operator_tt {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::Unary(_),
+        ))
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::Unary($i),
+        ))
+    };
 }
 
-pub(crate) fn minus() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Arithmetic(
-        ArithmeticOperatorTokenType::Unary(UnaryOperatorTokenType::Minus),
-    ))
+pub(crate) use unary_operator_tt;
+
+macro_rules! plus {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::Unary(
+                crate::lexer::lex::UnaryOperatorTokenType::Plus,
+            ),
+        ))
+    };
 }
 
-pub(crate) fn bitwise_not() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Arithmetic(
-        ArithmeticOperatorTokenType::Unary(UnaryOperatorTokenType::BitwiseNot),
-    ))
+pub(crate) use plus;
+
+macro_rules! minus {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::Unary(
+                crate::lexer::lex::UnaryOperatorTokenType::Minus,
+            ),
+        ))
+    };
 }
+
+pub(crate) use minus;
+
+macro_rules! bitwise_not {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Arithmetic(
+            crate::lexer::lex::ArithmeticOperatorTokenType::Unary(
+                crate::lexer::lex::UnaryOperatorTokenType::BitwiseNot,
+            ),
+        ))
+    };
+}
+
+pub(crate) use bitwise_not;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum TermOperatorTokenType {
     Star,
     Slash,
-    Procent,
+    Percent,
     BitshiftLeft,
     BitshiftRight,
 }
 
-pub(crate) fn star() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::Star))
+macro_rules! term_operator_tt {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Term(_))
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Term($i))
+    };
 }
 
-pub(crate) fn slash() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::Slash))
+pub(crate) use term_operator_tt;
+
+macro_rules! star {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Term(
+            crate::lexer::lex::TermOperatorTokenType::Star,
+        ))
+    };
 }
 
-pub(crate) fn procent() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::Procent))
+pub(crate) use star;
+
+macro_rules! slash {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Term(
+            crate::lexer::lex::TermOperatorTokenType::Slash,
+        ))
+    };
 }
 
-pub(crate) fn shl() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Term(TermOperatorTokenType::BitshiftLeft))
+pub(crate) use slash;
+
+macro_rules! percent {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Term(
+            crate::lexer::lex::TermOperatorTokenType::Percent,
+        ))
+    };
 }
 
-pub(crate) fn shr() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Term(
-        TermOperatorTokenType::BitshiftRight,
-    ))
+pub(crate) use percent;
+
+macro_rules! bitshift_left {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Term(
+            crate::lexer::lex::TermOperatorTokenType::BitshiftLeft,
+        ))
+    };
 }
+
+pub(crate) use bitshift_left;
+
+macro_rules! bitshift_right {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Term(
+            crate::lexer::lex::TermOperatorTokenType::BitshiftRight,
+        ))
+    };
+}
+
+pub(crate) use bitshift_right;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum ComparisonOperatorTokenType {
@@ -406,122 +805,182 @@ pub(crate) enum ComparisonOperatorTokenType {
     GreaterThanEquals,
 }
 
-pub(crate) fn equals() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Comparison(
-        ComparisonOperatorTokenType::Equals,
-    ))
+macro_rules! comparison_operator_tt {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison(_))
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison($i))
+    };
 }
 
-pub(crate) fn not_equals() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Comparison(
-        ComparisonOperatorTokenType::NotEquals,
-    ))
+pub(crate) use comparison_operator_tt;
+
+macro_rules! equals {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison(
+            crate::lexer::lex::ComparisonOperatorTokenType::Equals,
+        ))
+    };
 }
 
-pub(crate) fn less_than() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Comparison(
-        ComparisonOperatorTokenType::LessThan,
-    ))
+pub(crate) use equals;
+
+macro_rules! not_equals {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison(
+            crate::lexer::lex::ComparisonOperatorTokenType::NotEquals,
+        ))
+    };
 }
 
-pub(crate) fn greater_than() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Comparison(
-        ComparisonOperatorTokenType::GreaterThan,
-    ))
+pub(crate) use not_equals;
+
+macro_rules! less_than {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison(
+            crate::lexer::lex::ComparisonOperatorTokenType::LessThan,
+        ))
+    };
 }
 
-pub(crate) fn greater_than_equals() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Comparison(
-        ComparisonOperatorTokenType::GreaterThanEquals,
-    ))
+pub(crate) use less_than;
+
+macro_rules! greater_than {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison(
+            crate::lexer::lex::ComparisonOperatorTokenType::GreaterThan,
+        ))
+    };
 }
 
-pub(crate) fn less_than_equals() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Comparison(
-        ComparisonOperatorTokenType::LessThanEquals,
-    ))
+pub(crate) use greater_than;
+
+macro_rules! less_than_equals {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison(
+            crate::lexer::lex::ComparisonOperatorTokenType::LessThanEquals,
+        ))
+    };
 }
+
+pub(crate) use less_than_equals;
+
+macro_rules! greater_than_equals {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comparison(
+            crate::lexer::lex::ComparisonOperatorTokenType::GreaterThanEquals,
+        ))
+    };
+}
+
+pub(crate) use greater_than_equals;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum LParenOperatorTokenType {
     LParen,
 }
 
-pub(crate) fn l_paren() -> TokenType {
-    TokenType::Operator(OperatorTokenType::LParen(LParenOperatorTokenType::LParen))
+macro_rules! l_paren {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::LParen(
+            crate::lexer::lex::LParenOperatorTokenType::LParen,
+        ))
+    };
 }
+
+pub(crate) use l_paren;
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum RParenOperatorTokenType {
     RParen,
 }
 
-pub(crate) fn r_paren() -> TokenType {
-    TokenType::Operator(OperatorTokenType::RParen(RParenOperatorTokenType::RParen))
+macro_rules! r_paren {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::RParen(
+            crate::lexer::lex::RParenOperatorTokenType::RParen,
+        ))
+    };
 }
+
+pub(crate) use r_paren;
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum RSquareOperatorTokenType {
     RSquare,
 }
 
-pub(crate) fn r_square() -> TokenType {
-    TokenType::Operator(OperatorTokenType::RSquare(
-        RSquareOperatorTokenType::RSquare,
-    ))
+macro_rules! r_square {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::RSquare(
+            crate::lexer::lex::RSquareOperatorTokenType::RSquare,
+        ))
+    };
 }
+
+pub(crate) use r_square;
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum LSquareOperatorTokenType {
     LSquare,
 }
 
-pub(crate) fn l_square() -> TokenType {
-    TokenType::Operator(OperatorTokenType::LSquare(
-        LSquareOperatorTokenType::LSquare,
-    ))
+macro_rules! l_square {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::LSquare(
+            crate::lexer::lex::LSquareOperatorTokenType::LSquare,
+        ))
+    };
 }
+
+pub(crate) use l_square;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum TerminatorOperatorTokenType {
     Terminator,
 }
 
-pub(crate) fn terminator() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Terminator(
-        TerminatorOperatorTokenType::Terminator,
-    ))
+macro_rules! terminator {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Terminator(
+            crate::lexer::lex::TerminatorOperatorTokenType::Terminator,
+        ))
+    };
 }
+
+pub(crate) use terminator;
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum CommaOperatorTokenType {
     Comma,
 }
 
-pub(crate) fn comma() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Comma(CommaOperatorTokenType::Comma))
+macro_rules! comma {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comma(
+            crate::lexer::lex::CommaOperatorTokenType::Comma,
+        ))
+    };
 }
+
+pub(crate) use comma;
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 
 pub(crate) enum ColonOperatorTokenType {
     Colon,
 }
 
-pub(crate) fn colon() -> TokenType {
-    TokenType::Operator(OperatorTokenType::Colon(ColonOperatorTokenType::Colon))
+macro_rules! colon {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Colon(
+            crate::lexer::lex::ColonOperatorTokenType::Colon,
+        ))
+    };
 }
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum OperatorTokenType {
-    Assignment(AssignmentOperatorTokenType),
-    Arithmetic(ArithmeticOperatorTokenType),
-    Comparison(ComparisonOperatorTokenType),
-    Term(TermOperatorTokenType),
-    // Structural.
-    Comma(CommaOperatorTokenType),
-    LParen(LParenOperatorTokenType),
-    RParen(RParenOperatorTokenType),
-    LSquare(LSquareOperatorTokenType),
-    RSquare(RSquareOperatorTokenType),
-    Terminator(TerminatorOperatorTokenType),
-    Colon(ColonOperatorTokenType),
-}
+pub(crate) use colon;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) struct Position {
@@ -537,6 +996,7 @@ pub(crate) struct Token<'a> {
     pub(crate) len: usize,
     pub(crate) end: Position,
     pub(crate) token_type: TokenType,
+    pub(crate) indentation: usize,
 }
 
 type LineNumber = usize;
@@ -747,7 +1207,7 @@ impl Parser for StringParser {
             index += 1;
         }
 
-        Ok(lexer.create_token(string(), index - lexer.index))
+        Ok(lexer.create_token(string!(), index - lexer.index))
     }
 }
 
@@ -783,7 +1243,7 @@ impl Parser for IdentifierParser {
             index += next.len_utf8();
         }
 
-        Ok(lexer.create_token(identifier(), index - lexer.index))
+        Ok(lexer.create_token(identifier!(), index - lexer.index))
     }
 }
 struct HexIntParser;
@@ -819,7 +1279,7 @@ impl Parser for HexIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(int(), index - lexer.index))
+        Ok(lexer.create_token(int!(), index - lexer.index))
     }
 }
 
@@ -856,7 +1316,7 @@ impl Parser for BinIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(int(), index - lexer.index))
+        Ok(lexer.create_token(int!(), index - lexer.index))
     }
 }
 
@@ -884,7 +1344,7 @@ impl Parser for DecIntParser {
                 break;
             }
         }
-        Ok(lexer.create_token(int(), index - lexer.index))
+        Ok(lexer.create_token(int!(), index - lexer.index))
     }
 }
 
@@ -892,7 +1352,7 @@ struct EOIParser;
 impl Parser for EOIParser {
     fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
         if lexer.index == lexer.input.len() {
-            return Ok(lexer.create_token(eoi(), 0));
+            return Ok(lexer.create_token(eoi!(), 0));
         }
         Err(LexerError::WrongForm)
     }
@@ -964,7 +1424,7 @@ impl Parser for WhitespaceParser {
                 break;
             }
         }
-        Ok(lexer.create_token(white_space(), len))
+        Ok(lexer.create_token(white_space!(), len))
     }
 }
 
@@ -986,11 +1446,9 @@ impl Parser for LineCommentParser {
 
         while index < lexer.input.len() {
             if index < lexer.input.len() - 1 && &lexer.input[index..=index + 1] == "\r\n" {
-                index += 2;
                 break;
             }
             if lexer.input.as_bytes()[index] == b'\n' || lexer.input.as_bytes()[index] == b'\r' {
-                index += 1;
                 break;
             }
             index += 1;
@@ -1063,11 +1521,18 @@ struct KeywordParser {
 
 impl Parser for KeywordParser {
     fn parse<'a>(&self, lexer: &mut Lexer<'a>) -> LexerResult<'a, Token<'a>> {
+        let (index, column_number, line_number) =
+            (lexer.index, lexer.column_number, lexer.line_number);
         let mut res = IdentifierParser.parse(lexer)?;
         if res.contents == self.tag {
             res.token_type = self.keyword_type;
+            Ok(res)
+        } else {
+            lexer.index = index;
+            lexer.column_number = column_number;
+            lexer.line_number = line_number;
+            Err(LexerError::WrongForm)
         }
-        Ok(res)
     }
 }
 
@@ -1130,6 +1595,8 @@ impl<'a> Lexer<'a> {
         let index = self.index;
         let column_number = self.column_number;
         let line_number = self.line_number;
+        let indentation = self.calculate_indentation();
+
         let end = self.calculate_offset(len);
         let contents = if end.index < self.input.len() {
             &self.input[index..=end.index]
@@ -1144,6 +1611,7 @@ impl<'a> Lexer<'a> {
                 column_number,
                 line_number,
             },
+            indentation,
             end,
             contents,
         }
@@ -1230,6 +1698,23 @@ impl<'a> Lexer<'a> {
             column_number,
         }
     }
+
+    fn calculate_indentation(&self) -> usize {
+        let mut indent = 0;
+
+        let first_byte_in_column = self.index - self.column_number;
+        let mut idx = first_byte_in_column;
+        while self.input.get(idx..=idx).is_some()
+            && matches!(
+                self.input.as_bytes().get(idx).unwrap(),
+                whitespace_pattern!()
+            )
+        {
+            idx += 1;
+            indent += 1;
+        }
+        indent
+    }
     pub(crate) fn yield_token(&mut self) -> LexerResult<'a, Token<'a>> {
         counted_array!(lazy_static PARSERS: [Box<dyn Parser>; _] = [
         EOIParser.boxed(),
@@ -1240,76 +1725,83 @@ impl<'a> Lexer<'a> {
         DecIntParser.boxed(),
 
 
-        LineCommentParser {prefix: "///", return_type: docs_line_comment()}.boxed(),
-        LineCommentParser {prefix: "//", return_type: line_comment()}.boxed(),
+        LineCommentParser {prefix: "///", return_type: docs_line_comment!()}.boxed(),
+        LineCommentParser {prefix: "//", return_type: normal_line_comment!()}.boxed(),
 
-        BlockCommentParser {prefix: "/**", return_type: docs_block_comment()}.boxed(),
-        BlockCommentParser {prefix : "/*", return_type: block_comment()}.boxed(),
+        BlockCommentParser {prefix: "/**", return_type: docs_block_comment!()}.boxed(),
+        BlockCommentParser {prefix : "/*", return_type: normal_block_comment!()}.boxed(),
 
-        tag(";", terminator()).boxed(),
-        tag("\r\n", terminator()).boxed(),
-        tag("\r", terminator()).boxed(),
-        tag("\n", terminator()).boxed(),
+        tag(";", terminator!()).boxed(),
+        tag("\r\n", terminator!()).boxed(),
+        tag("\r", terminator!()).boxed(),
+        tag("\n", terminator!()).boxed(),
 
+        
+        tag("/=", slash_assign!()).boxed(),
+        tag("*=", star_assign!()).boxed(),
+        tag("%=", procent_assign!()).boxed(),
+        tag("<<=", bitshift_left_assign!()).boxed(),
+        tag(">>=", bitshift_right_assign!()).boxed(),
 
-        tag("/=", slash_assign()).boxed(),
-        tag("*=", star_assign()).boxed(),
-        tag("%=", procent_assign()).boxed(),
-        tag("<<=", shl_assign()).boxed(),
-        tag(">>=", shr_assign()).boxed(),
+        tag("!=", not_equals!()).boxed(),
+        tag("==", equals!()).boxed(),
+        tag(">=", greater_than_equals!()).boxed(),
+        tag("<=", less_than_equals!()).boxed(),
+        tag(">", greater_than!()).boxed(),
+        tag("<", less_than!()).boxed(),
 
-        tag("+=", plus_assign()).boxed(),
-        tag("-=", minus_assign()).boxed(),
-        tag("&=", bitwise_and_assign()).boxed(),
-        tag("|=", bitwise_or_assign()).boxed(),
-        tag("^=", bitwise_xor_assign()).boxed(),
-        tag("=", assign()).boxed(),
+        tag("+=", plus_assign!()).boxed(),
+        tag("-=", minus_assign!()).boxed(),
+        tag("&=", bitwise_and_assign!()).boxed(),
+        tag("|=", bitwise_or_assign!()).boxed(),
+        tag("^=", bitwise_xor_assign!()).boxed(),
+        tag("=", assign!()).boxed(),
 
-        tag("<<", shl()).boxed(),
-        tag(">>", shr()).boxed(),
-        tag("/", slash()).boxed(),
-        tag("*", star()).boxed(),
-        tag("%", procent()).boxed(),
+        tag("<<", bitshift_left!()).boxed(),
+        tag(">>", bitshift_right!()).boxed(),
+        tag("/", slash!()).boxed(),
+        tag("*", star!()).boxed(),
+        tag("%", percent!()).boxed(),
 
-        tag("&", bitwise_and()).boxed(),
-        tag("|", bitwise_or()).boxed(),
-        tag("~", bitwise_not()).boxed(),
-        tag("^", bitwise_xor()).boxed(),
-
-        tag("!=", not_equals()).boxed(),
-        tag("==", equals()).boxed(),
-        tag(">=", greater_than_equals()).boxed(),
-        tag("<=", less_than_equals()).boxed(),
-        tag(">", greater_than()).boxed(),
-        tag("<", less_than()).boxed(),
-
-        tag("(", l_paren()).boxed(),
-        tag(")", r_paren()).boxed(),
-        tag("[", l_square()).boxed(),
-        tag("]", r_square()).boxed(),
-        tag(",", comma()).boxed(),
+        tag("&", bitwise_and!()).boxed(),
+        tag("|", bitwise_or!()).boxed(),
+        tag("~", bitwise_not!()).boxed(),
+        tag("^", bitwise_xor!()).boxed(),
 
 
-        tag("+", plus()).boxed(),
-        tag("-", minus()).boxed(),
 
-        tag(":", colon()).boxed(),
+        tag("(", l_paren!()).boxed(),
+        tag(")", r_paren!()).boxed(),
+        tag("[", l_square!()).boxed(),
+        tag("]", r_square!()).boxed(),
+        tag(",", comma!()).boxed(),
+
+
+        tag("+", plus!()).boxed(),
+        tag("-", minus!()).boxed(),
+
+        tag(":", colon!()).boxed(),
 
 
 
         WhitespaceParser.boxed(),
 
-        keyword("and", and()).boxed(),
-        keyword("or", or()).boxed(),
-        keyword("fun", fun()).boxed(),
-        keyword("if", if_()).boxed(),
-        keyword("elif", elif()).boxed(),
-        keyword("else", else_()).boxed(),
-        keyword("not", not()).boxed(),
-        keyword("loop", loop_()).boxed(),
-        keyword("break", break_()).boxed(),
-        keyword("continue", continue_()).boxed(),
-        keyword("return", return_()).boxed(),
+        keyword("and", and!()).boxed(),
+        keyword("or", or!()).boxed(),
+        keyword("fun", fun!()).boxed(),
+        keyword("if", if_!()).boxed(),
+        keyword("elif", elif!()).boxed(),
+        keyword("else", else_!()).boxed(),
+        keyword("not", not!()).boxed(),
+        keyword("loop", loop_!()).boxed(),
+        keyword("break", break_!()).boxed(),
+        keyword("continue", continue_!()).boxed(),
+        keyword("return", return_!()).boxed(),
+
+        keyword("true", true_!()).boxed(),
+        keyword("false", false_!()).boxed(),
+        keyword("nothing", nothing!()).boxed(),
+
 
         IdentifierParser.boxed(),
         ]);
@@ -1369,7 +1861,7 @@ mod tests {
             Lexer::new("2 != 3").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         column_number: 0,
                         line_number: 0,
@@ -1382,9 +1874,10 @@ mod tests {
                         index: 0,
                     },
                     contents: "2",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: white_space(),
+                    token_type: white_space!(),
                     start: Position {
                         column_number: 1,
                         line_number: 0,
@@ -1397,9 +1890,10 @@ mod tests {
                         index: 1,
                     },
                     contents: " ",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: not_equals(),
+                    token_type: not_equals!(),
                     start: Position {
                         column_number: 2,
                         line_number: 0,
@@ -1412,9 +1906,10 @@ mod tests {
                         index: 3,
                     },
                     contents: "!=",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: white_space(),
+                    token_type: white_space!(),
                     start: Position {
                         column_number: 4,
                         line_number: 0,
@@ -1427,9 +1922,10 @@ mod tests {
                         index: 4,
                     },
                     contents: " ",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         column_number: 5,
                         line_number: 0,
@@ -1442,9 +1938,10 @@ mod tests {
                         index: 5,
                     },
                     contents: "3",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: eoi(),
+                    token_type: eoi!(),
                     start: Position {
                         line_number: 0,
                         column_number: 6,
@@ -1457,6 +1954,7 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
+                    indentation: 0,
                 } //Token::Int("2"),
                   //Token::Whitespace(" "),
                   //Token::NotEquals,
@@ -1500,7 +1998,7 @@ mod tests {
             Lexer::new("1\r\n2\r\n3").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
@@ -1513,9 +2011,10 @@ mod tests {
                         index: 0,
                     },
                     contents: "1",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: terminator(),
+                    token_type: terminator!(),
                     start: Position {
                         line_number: 0,
                         column_number: 1,
@@ -1528,9 +2027,10 @@ mod tests {
                         index: 2,
                     },
                     contents: "\r\n",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         line_number: 1,
                         column_number: 0,
@@ -1543,9 +2043,10 @@ mod tests {
                         index: 3,
                     },
                     contents: "2",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: terminator(),
+                    token_type: terminator!(),
                     start: Position {
                         line_number: 1,
                         column_number: 1,
@@ -1558,9 +2059,10 @@ mod tests {
                         index: 5,
                     },
                     contents: "\r\n",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         line_number: 2,
                         column_number: 0,
@@ -1573,9 +2075,10 @@ mod tests {
                         index: 6,
                     },
                     contents: "3",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: eoi(),
+                    token_type: eoi!(),
                     start: Position {
                         line_number: 2,
                         column_number: 1,
@@ -1588,6 +2091,7 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
+                    indentation: 0,
                 }
             ]
         );
@@ -1599,7 +2103,7 @@ mod tests {
             Lexer::new("1\n2\n3").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
@@ -1612,9 +2116,10 @@ mod tests {
                         index: 0,
                     },
                     contents: "1",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: terminator(),
+                    token_type: terminator!(),
                     start: Position {
                         line_number: 0,
                         column_number: 1,
@@ -1627,9 +2132,10 @@ mod tests {
                         index: 1,
                     },
                     contents: "\n",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         line_number: 1,
                         column_number: 0,
@@ -1642,9 +2148,10 @@ mod tests {
                         index: 2,
                     },
                     contents: "2",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: terminator(),
+                    token_type: terminator!(),
                     start: Position {
                         line_number: 1,
                         column_number: 1,
@@ -1657,9 +2164,10 @@ mod tests {
                         index: 3,
                     },
                     contents: "\n",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         line_number: 2,
                         column_number: 0,
@@ -1672,9 +2180,10 @@ mod tests {
                         index: 4,
                     },
                     contents: "3",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: eoi(),
+                    token_type: eoi!(),
                     start: Position {
                         line_number: 2,
                         column_number: 1,
@@ -1687,6 +2196,7 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
+                    indentation: 0,
                 }
             ]
         );
@@ -1700,7 +2210,7 @@ mod tests {
                 .unwrap(),
             vec![
                 Token {
-                    token_type: block_comment(),
+                    token_type: normal_block_comment!(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
@@ -1713,9 +2223,10 @@ mod tests {
                         index: 24,
                     },
                     contents: "/*\r\n\r\n\r\nI am comment!\r\n*/",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: int(),
+                    token_type: int!(),
                     start: Position {
                         line_number: 4,
                         column_number: 2,
@@ -1728,9 +2239,10 @@ mod tests {
                         index: 27,
                     },
                     contents: "123",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: block_comment(),
+                    token_type: normal_block_comment!(),
                     start: Position {
                         line_number: 4,
                         column_number: 5,
@@ -1743,9 +2255,10 @@ mod tests {
                         index: 53,
                     },
                     contents: "/*I am second comment!\r\n*/",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: terminator(),
+                    token_type: terminator!(),
                     start: Position {
                         line_number: 5,
                         column_number: 2,
@@ -1758,9 +2271,10 @@ mod tests {
                         index: 54,
                     },
                     contents: ";",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: terminator(),
+                    token_type: terminator!(),
                     start: Position {
                         line_number: 5,
                         column_number: 3,
@@ -1773,9 +2287,10 @@ mod tests {
                         index: 55,
                     },
                     contents: ";",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: eoi(),
+                    token_type: eoi!(),
                     start: Position {
                         line_number: 5,
                         column_number: 4,
@@ -1788,6 +2303,7 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
+                    indentation: 0,
                 }
             ]
         );
@@ -1798,7 +2314,7 @@ mod tests {
             Lexer::new("'äääää'").collect_tokens().unwrap(),
             vec![
                 Token {
-                    token_type: string(),
+                    token_type: string!(),
                     start: Position {
                         line_number: 0,
                         column_number: 0,
@@ -1810,10 +2326,11 @@ mod tests {
                         index: 11
                     },
                     len: 12,
-                    contents: "'äääää'"
+                    contents: "'äääää'",
+                    indentation: 0,
                 },
                 Token {
-                    token_type: TokenType::Eoi,
+                    token_type: eoi!(),
                     start: Position {
                         line_number: 0,
                         column_number: 7,
@@ -1826,6 +2343,7 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
+                    indentation: 0,
                 }
             ]
         )
@@ -1850,6 +2368,313 @@ mod tests {
                 "\t ",
                 1
             )])
+        )
+    }
+    #[test]
+    fn test_lexer_9() {
+        pretty_assertions::assert_eq!(
+            Lexer::new("\t\ta\nb\n\tc\n\t\td").collect_tokens().unwrap(),
+            vec![
+                Token {
+                    token_type: white_space!(),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 0,
+                        index: 0,
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 1,
+                        index: 1,
+                    },
+                    len: 2,
+                    contents: "\t\t",
+                    indentation: 2,
+                },
+                Token {
+                    token_type: identifier!(),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 2,
+                        index: 2,
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 2,
+                        index: 2,
+                    },
+                    len: 1,
+                    contents: "a",
+                    indentation: 2,
+                },
+                Token {
+                    token_type: terminator!(),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 3,
+                        index: 3
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 3,
+                        index: 3
+                    },
+                    len: 1,
+                    contents: "\n",
+                    indentation: 2,
+                },
+                Token {
+                    token_type: identifier!(),
+                    start: Position {
+                        line_number: 1,
+                        column_number: 0,
+                        index: 4
+                    },
+                    end: Position {
+                        line_number: 1,
+                        column_number: 0,
+                        index: 4
+                    },
+                    len: 1,
+                    contents: "b",
+                    indentation: 0,
+                },
+                Token {
+                    token_type: terminator!(),
+                    start: Position {
+                        line_number: 1,
+                        column_number: 1,
+                        index: 5
+                    },
+                    end: Position {
+                        line_number: 1,
+                        column_number: 1,
+                        index: 5
+                    },
+                    len: 1,
+                    contents: "\n",
+                    indentation: 0,
+                },
+                Token {
+                    token_type: white_space!(),
+                    start: Position {
+                        line_number: 2,
+                        column_number: 0,
+                        index: 6
+                    },
+                    end: Position {
+                        line_number: 2,
+                        column_number: 0,
+                        index: 6
+                    },
+                    len: 1,
+                    contents: "\t",
+                    indentation: 1,
+                },
+                Token {
+                    token_type: identifier!(),
+                    start: Position {
+                        line_number: 2,
+                        column_number: 1,
+                        index: 7
+                    },
+                    end: Position {
+                        line_number: 2,
+                        column_number: 1,
+                        index: 7
+                    },
+                    len: 1,
+                    contents: "c",
+                    indentation: 1,
+                },
+                Token {
+                    token_type: terminator!(),
+                    start: Position {
+                        line_number: 2,
+                        column_number: 2,
+                        index: 8
+                    },
+                    end: Position {
+                        line_number: 2,
+                        column_number: 2,
+                        index: 8
+                    },
+                    len: 1,
+                    contents: "\n",
+                    indentation: 1,
+                },
+                Token {
+                    token_type: white_space!(),
+                    start: Position {
+                        line_number: 3,
+                        column_number: 0,
+                        index: 9,
+                    },
+                    end: Position {
+                        line_number: 3,
+                        column_number: 1,
+                        index: 10,
+                    },
+                    len: 2,
+                    contents: "\t\t",
+                    indentation: 2,
+                },
+                Token {
+                    token_type: identifier!(),
+                    start: Position {
+                        line_number: 3,
+                        column_number: 2,
+                        index: 11
+                    },
+                    end: Position {
+                        line_number: 3,
+                        column_number: 2,
+                        index: 11
+                    },
+                    len: 1,
+                    contents: "d",
+                    indentation: 2,
+                },
+                Token {
+                    token_type: eoi!(),
+                    start: Position {
+                        line_number: 3,
+                        column_number: 3,
+                        index: 12,
+                    },
+                    end: Position {
+                        line_number: 3,
+                        column_number: 3,
+                        index: 12
+                    },
+                    len: 0,
+                    contents: "",
+                    indentation: 2,
+                }
+            ]
+        )
+    }
+
+    #[test]
+    fn test_lexer_line_comments() {
+        pretty_assertions::assert_eq!(
+            Lexer::new("// comment\n// comment\n// comment\n")
+                .collect_tokens()
+                .unwrap(),
+            vec![
+                Token {
+                    token_type: normal_line_comment!(),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 0,
+                        index: 0,
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 9,
+                        index: 9,
+                    },
+                    contents: "// comment",
+                    len: 10,
+                    indentation: 0,
+                },
+                Token {
+                    token_type: terminator!(),
+                    start: Position {
+                        line_number: 0,
+                        column_number: 10,
+                        index: 10,
+                    },
+                    end: Position {
+                        line_number: 0,
+                        column_number: 10,
+                        index: 10,
+                    },
+                    len: 1,
+                    contents: "\n",
+                    indentation: 0,
+                },
+                Token {
+                    token_type: normal_line_comment!(),
+                    start: Position {
+                        line_number: 1,
+                        column_number: 0,
+                        index: 11,
+                    },
+                    end: Position {
+                        line_number: 1,
+                        column_number: 9,
+                        index: 20,
+                    },
+                    contents: "// comment",
+                    len: 10,
+                    indentation: 0,
+                },
+                Token {
+                    token_type: terminator!(),
+                    start: Position {
+                        line_number: 1,
+                        column_number: 10,
+                        index: 21,
+                    },
+                    end: Position {
+                        line_number: 1,
+                        column_number: 10,
+                        index: 21,
+                    },
+                    len: 1,
+                    contents: "\n",
+                    indentation: 0,
+                },
+                Token {
+                    token_type: normal_line_comment!(),
+                    start: Position {
+                        line_number: 2,
+                        column_number: 0,
+                        index: 22,
+                    },
+                    end: Position {
+                        line_number: 2,
+                        column_number: 9,
+                        index: 31,
+                    },
+                    contents: "// comment",
+                    len: 10,
+                    indentation: 0,
+                },
+                Token {
+                    token_type: terminator!(),
+                    start: Position {
+                        line_number: 2,
+                        column_number: 10,
+                        index: 32,
+                    },
+                    end: Position {
+                        line_number: 2,
+                        column_number: 10,
+                        index: 32,
+                    },
+                    len: 1,
+                    contents: "\n",
+                    indentation: 0,
+                },
+                Token {
+                    token_type: eoi!(),
+                    start: Position {
+                        line_number: 3,
+                        column_number: 0,
+                        index: 33,
+                    },
+                    end: Position {
+                        line_number: 3,
+                        column_number: 0,
+                        index: 33,
+                    },
+                    len: 0,
+                    contents: "",
+                    indentation: 0,
+                }
+            ]
         )
     }
 }
