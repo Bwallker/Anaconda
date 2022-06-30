@@ -1,10 +1,10 @@
 use super::bytecode::{Bytecode, Function, OpCodes, Program, ValueStore, USIZE_BYTES};
 use crate::lexer::lex::{
     and, assignment_operator_tt, bitshift_left, bitshift_right, bitwise_and, bitwise_or,
-    bitwise_xor, break_, comma, comment_tt, docs_block_comment, eoi, equals, false_, fun,
-    greater_than, greater_than_equals, identifier, int, l_paren, less_than, less_than_equals,
-    minus, normal_block_comment, not, not_equals, nothing, or, percent, plus, r_paren, return_,
-    slash, star, string, terminator, true_, unary_operator_tt, white_space,
+    bitwise_xor, break_, comma, comment_tt, docs_block_comment, elif, else_, eoi, equals, false_,
+    fun, greater_than, greater_than_equals, identifier, if_, int, l_paren, less_than,
+    less_than_equals, minus, normal_block_comment, not, not_equals, nothing, or, percent, plus,
+    r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt, white_space,
     ArithmeticOperatorTokenType, AssignmentOperatorTokenType, BooleanComparisonKeywordTokenType,
     ComparisonOperatorTokenType, KeywordTokenType, NotKeywordTokenType, TermOperatorTokenType,
     Token, TokenType, UnaryOperatorTokenType,
@@ -525,6 +525,53 @@ impl<'a> GenerateBytecode for AtomicExpressionType<'a> {
                 bytecode.push_opcode(OpCodes::Return);
                 bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
             }
+            AtomicExpressionType::If(i) => {
+                i.condition.gen_bytecode(bytecode, ast);
+                bytecode.push_opcode(OpCodes::IfFalseGoto);
+                let addr_of_if_goto = bytecode.instructions.len();
+                bytecode.push_usize(0);
+                i.then_block.gen_bytecode(bytecode, ast);
+                bytecode.push_opcode(OpCodes::Goto);
+                let addr_of_body_goto = bytecode.instructions.len();
+                bytecode.push_usize(0);
+                let first_elif_addr = bytecode.instructions.len();
+                let mut elif_exprs_end_addresses = Vec::with_capacity(i.elif_expressions.len());
+                for elif_expr in i.elif_expressions.iter() {
+                    elif_expr.condition.gen_bytecode(bytecode, ast);
+                    bytecode.push_opcode(OpCodes::IfFalseGoto);
+                    let addr_of_elif_goto = bytecode.instructions.len();
+                    bytecode.push_usize(0);
+                    elif_expr.then_block.gen_bytecode(bytecode, ast);
+                    bytecode.push_opcode(OpCodes::Goto);
+                    let addr_of_body_goto = bytecode.instructions.len();
+                    bytecode.push_usize(0);
+                    elif_exprs_end_addresses.push(addr_of_body_goto);
+                    bytecode.set_usize(addr_of_elif_goto, bytecode.instructions.len());
+                }
+                let addr_of_else_goto = bytecode.instructions.len();
+                if let Some(ref v) = i.else_expression {
+                    v.else_block.gen_bytecode(bytecode, ast);
+                }
+
+                let first_thing_after = bytecode.instructions.len();
+                bytecode.set_usize(
+                    addr_of_if_goto,
+                    if i.elif_expressions.is_empty() {
+                        if i.else_expression.is_none() {
+                            first_thing_after
+                        } else {
+                            addr_of_else_goto
+                        }
+                    } else {
+                        first_elif_addr
+                    },
+                );
+
+                for addr in elif_exprs_end_addresses {
+                    bytecode.set_usize(addr, first_thing_after);
+                }
+                bytecode.set_usize(addr_of_body_goto, first_thing_after);
+            }
             unknown => {
                 println!("{:#?}", unknown);
                 todo!()
@@ -540,22 +587,22 @@ pub(crate) struct DictExpression;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct IfExpression<'a> {
     pub(crate) condition: Expression<'a>,
-    pub(crate) then_branch: Box<Block<'a>>,
-    pub(crate) elif_branches: Vec<ElifExpression<'a>>,
-    pub(crate) else_branch: Option<ElseExpression<'a>>,
+    pub(crate) then_block: Block<'a>,
+    pub(crate) elif_expressions: Vec<ElifExpression<'a>>,
+    pub(crate) else_expression: Option<ElseExpression<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ElifExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) condition: Expression<'a>,
-    pub(crate) then_branch: Block<'a>,
+    pub(crate) then_block: Block<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ElseExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
-    pub(crate) then_branch: Block<'a>,
+    pub(crate) else_block: Block<'a>,
 }
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct ForExpression;
@@ -986,7 +1033,6 @@ impl<'a> ExpectSelf<'a> for Expression<'a> {
                 Ok(v) => v,
                 Err(e) => match e {
                     ParserError::WrongForm => {
-                        ast.index -= 1;
                         break;
                     }
                     _ => return Err(e),
@@ -1005,6 +1051,7 @@ impl<'a> ExpectSelf<'a> for Expression<'a> {
                 });
             }
         }
+        ast.index -= 1;
 
         Ok(Expression {
             position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
@@ -1545,7 +1592,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                     ));
                 }
                 ast.index += 1;
-                ast.step_over_whitespace_and_block_comments();
+                ast.step_over_whitespace_and_comments();
                 if ast.current_token().token_type != terminator!() {
                     return Err(ast.create_parse_error_with_message(
                         ast.index,
@@ -1569,6 +1616,134 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                     },
                 };
                 AtomicExpressionType::FuncDef(FunctionDefinitionExpression { args, body })
+            }
+            if_!() => {
+                ast.index += 1;
+                ast.step_over_whitespace_and_block_comments();
+                let condition = match Expression::expect(ast) {
+                    Ok(v) => v,
+                    Err(e) => match e {
+                        ParserError::WrongForm => {
+                            return Err(ast.create_parse_error_with_message(
+                                first_token_index,
+                                ast.index - first_token_index + 1,
+                                "Expected an expression after 'if' keyword".into(),
+                            ))
+                        }
+                        _ => return Err(e),
+                    },
+                };
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments();
+                if ast.current_token().token_type != terminator!() {
+                    return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "Expected a terminator after 'if' condition".into(),
+                    ));
+                }
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments_and_terminators();
+                let then_block = match Block::expect(ast) {
+                    Ok(v) => v,
+                    Err(e) => match e {
+                        ParserError::WrongForm => {
+                            return Err(ast.create_parse_error_with_message(
+                                first_token_index,
+                                ast.index - first_token_index + 1,
+                                "Expected an indented block after 'if' condition".into(),
+                            ))
+                        }
+                        _ => return Err(e),
+                    },
+                };
+                let mut last_valid_index = ast.index;
+                ast.index += 1;
+                let mut elif_expressions = vec![];
+                ast.step_over_whitespace_and_comments_and_terminators();
+                while ast.current_token_type() == elif!() {
+                    let first_token_index = ast.index;
+                    ast.index += 1;
+                    ast.step_over_whitespace_and_block_comments();
+                    let condition = match Expression::expect(ast) {
+                        Ok(v) => v,
+                        Err(e) => match e {
+                            ParserError::WrongForm => {
+                                return Err(ast.create_parse_error_with_message(
+                                    first_token_index,
+                                    ast.index - first_token_index + 1,
+                                    "Expected an expression after 'elif' keyword".into(),
+                                ))
+                            }
+                            _ => return Err(e),
+                        },
+                    };
+                    ast.index += 1;
+                    ast.step_over_whitespace_and_comments();
+                    if ast.current_token().token_type != terminator!() {
+                        return Err(ast.create_parse_error_with_message(
+                            ast.index,
+                            1,
+                            "Expected a terminator after 'elif' condition".into(),
+                        ));
+                    }
+                    ast.index += 1;
+                    ast.step_over_whitespace_and_comments_and_terminators();
+                    let then_block = match Block::expect(ast) {
+                        Ok(v) => v,
+                        Err(e) => match e {
+                            ParserError::WrongForm => {
+                                return Err(ast.create_parse_error_with_message(
+                                    first_token_index,
+                                    ast.index - first_token_index + 1,
+                                    "Expected an indented block after 'elif' condition".into(),
+                                ))
+                            }
+                            _ => return Err(e),
+                        },
+                    };
+                    elif_expressions.push(ElifExpression {
+                        position: ast
+                            .create_position(first_token_index, ast.index - first_token_index + 1),
+                        then_block,
+                        condition,
+                    });
+                    last_valid_index = ast.index;
+                    ast.index += 1;
+                    ast.step_over_whitespace_and_comments_and_terminators();
+                }
+                let else_expression = if ast.current_token_type() == else_!() {
+                    let first_token_index = ast.index;
+                    ast.index += 1;
+                    ast.step_over_whitespace_and_block_comments();
+                    let else_block = match Block::expect(ast) {
+                        Ok(v) => v,
+                        Err(e) => match e {
+                            ParserError::WrongForm => {
+                                return Err(ast.create_parse_error_with_message(
+                                    first_token_index,
+                                    ast.index - first_token_index + 1,
+                                    "Expected an indented block after 'else' keyword".into(),
+                                ))
+                            }
+                            _ => return Err(e),
+                        },
+                    };
+                    Some(ElseExpression {
+                        position: ast
+                            .create_position(first_token_index, ast.index - first_token_index + 1),
+                        else_block,
+                    })
+                } else {
+                    ast.index = last_valid_index;
+                    None
+                };
+                AtomicExpressionType::If(IfExpression {
+                    condition,
+                    then_block,
+                    elif_expressions,
+                    else_expression,
+                })
             }
             terminator!() => return Err(ParserError::WrongForm),
             x => {

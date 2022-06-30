@@ -75,6 +75,15 @@ impl Bytecode {
         )
     }
 
+    pub(crate) fn set_usize(&mut self, index: usize, val: usize) {
+        let mut i = 0;
+        let mut bytes = val.to_le_bytes().into_iter();
+        while i < USIZE_BYTES {
+            self.instructions[index + i] = bytes.next().unwrap();
+            i += 1;
+        }
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             instructions: Vec::new(),
@@ -149,6 +158,10 @@ pub(crate) enum OpCodes {
     Modulo,
     BitshiftLeft,
     BitshiftRight,
+
+    IfTrueGoto,
+    IfFalseGoto,
+    Goto,
 }
 
 impl Display for OpCodes {
@@ -700,6 +713,28 @@ impl<'a> BytecodeInterpreter<'a> {
                     }
                 }
             }
+            OpCodes::Goto => {
+                let addr = self.bytecode.read_usize(self.program_counter + 1);
+                self.program_counter = addr;
+            }
+            OpCodes::IfTrueGoto => {
+                let val = self.stack.pop().unwrap();
+                if val.as_bool() {
+                    let addr = self.bytecode.read_usize(self.program_counter + 1);
+                    self.program_counter = addr;
+                } else {
+                    self.program_counter += 1 + USIZE_BYTES;
+                }
+            }
+            OpCodes::IfFalseGoto => {
+                let val = self.stack.pop().unwrap();
+                if !val.as_bool() {
+                    let addr = self.bytecode.read_usize(self.program_counter + 1);
+                    self.program_counter = addr;
+                } else {
+                    self.program_counter += 1 + USIZE_BYTES;
+                }
+            }
         }
     }
 
@@ -771,6 +806,10 @@ impl<'a> BytecodeInterpreter<'a> {
 
             OpCodes::LoadFalse => 1,
             OpCodes::LoadTrue => 1,
+
+            OpCodes::Goto => 1 + USIZE_BYTES,
+            OpCodes::IfTrueGoto => 1 + USIZE_BYTES,
+            OpCodes::IfFalseGoto => 1 + USIZE_BYTES,
         }
     }
 
@@ -872,7 +911,7 @@ impl<'a> AnacondaValue<'a> {
         match self {
             AnacondaValue::Int(i) => *i != ibig!(0),
             AnacondaValue::Nothing => false,
-            AnacondaValue::Function(_) => true,
+            AnacondaValue::Function(_) => panic!("Functions cannot be cast to booleans."),
             AnacondaValue::String(s) => !s.is_empty(),
             AnacondaValue::Bool(b) => *b,
         }
