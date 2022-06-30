@@ -6,7 +6,7 @@
             "request": "launch",
             "name": "Debug",
             "program": "${workspaceFolder}/target/debug/Anaconda.exe",
-            "args": ["l", "-p", "(1 == 0x11111)"],
+            "args": ["r", "--path", "calculate_number.an"],
             "cwd": "${workspaceFolder}"
         }
     ]

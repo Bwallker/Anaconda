@@ -56,12 +56,12 @@ pub(crate) struct Bytecode {
 
 impl Bytecode {
     pub(crate) fn push_opcode(&mut self, instruction: OpCodes) {
-        println!("Pushed instruction {instruction:#?} into bytecode");
+        // println!("Pushed instruction {instruction:#?} into bytecode");
         self.instructions.push(instruction as u8)
     }
 
     pub(crate) fn push_usize(&mut self, num: usize) {
-        println!("Pushed usize {num:#?} into bytecode");
+        // println!("Pushed usize {num:#?} into bytecode");
 
         self.instructions.extend_from_slice(&num.to_le_bytes())
     }
@@ -84,7 +84,10 @@ impl Bytecode {
 
 pub(crate) fn generate_bytecode(ast: &mut Ast<'_>) -> Bytecode {
     let mut res = Bytecode::new();
-    ast.program.base_block.clone().unwrap().gen_bytecode(&mut res, ast);
+    let block = ast.program.base_block.take().unwrap();
+    block.gen_bytecode(&mut res, ast);
+    // EndBlock opcode to offset the global scope we add when initializing our VM.
+    res.push_opcode(OpCodes::EndBlock);
     res
 }
 use num_enum::TryFromPrimitive;
@@ -186,9 +189,13 @@ impl<'a> BytecodeInterpreter<'a> {
             function_definitions: program.function_definitions,
             program_counter: 0,
             bytecode,
-            stack: vec![],
-            scopes: vec![Scope::new()],
-            return_addresses: vec![],
+            stack: Vec::with_capacity(100),
+            scopes: {
+                let mut scopes = Vec::with_capacity(20);
+                scopes.push(Scope::new());
+                scopes
+            },
+            return_addresses: Vec::with_capacity(20),
         };
         this.add_builtins();
         this
@@ -212,7 +219,6 @@ impl<'a> BytecodeInterpreter<'a> {
         self.bytecode.push_usize(idx);
         self.bytecode.push_opcode(OpCodes::Print);
         self.bytecode.push_opcode(OpCodes::LoadNothing);
-        self.bytecode.push_opcode(OpCodes::EndBlock);
         self.bytecode.push_opcode(OpCodes::Return);
         self.bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
         self.bytecode.push_opcode(OpCodes::Pop);
@@ -258,6 +264,7 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.stack.push(AnacondaValue::String(Cow::Borrowed(value)));
             }
             OpCodes::CallFunction => {
+                self.scopes.push(Scope::new());
                 self.program_counter += 1;
                 let args_len = self.bytecode.read_usize(self.program_counter);
                 self.program_counter += USIZE_BYTES;
@@ -281,6 +288,7 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.program_counter += 1;
             }
             OpCodes::Return => {
+                self.scopes.pop();
                 self.program_counter = self.return_addresses.pop().unwrap();
             }
             OpCodes::Print => {
@@ -770,6 +778,8 @@ impl<'a> BytecodeInterpreter<'a> {
         while self.program_counter < self.bytecode.instructions.len() {
             self.interpret_next_instruction();
         }
+        println!("{:#?}", self.scopes);
+        println!("{:#?}", self.stack);
     }
 
     fn identifier_to_function<'b>(&'b mut self, identifier: &'a str) -> &'b Function {
