@@ -393,7 +393,7 @@ pub(crate) enum LoopKeywordTokenType {
 macro_rules! loop_ {
     () => {
         crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Loop(
-            LoopKeywordTokenType::Loop,
+            crate::lexer::lex::LoopKeywordTokenType::Loop,
         ))
     };
 }

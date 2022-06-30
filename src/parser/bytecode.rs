@@ -117,6 +117,7 @@ pub(crate) enum OpCodes {
     Return,
     Pop,
     PrintStack,
+    Continue,
     Break,
     StartOfFunctionDefinition,
     EndOfFunctionDefinition,
@@ -159,6 +160,8 @@ pub(crate) enum OpCodes {
     BitshiftLeft,
     BitshiftRight,
 
+    StartOfLoop,
+
     IfTrueGoto,
     IfFalseGoto,
     Goto,
@@ -191,6 +194,7 @@ pub(crate) struct BytecodeInterpreter<'a> {
     pub(crate) stack: Vec<AnacondaValue<'a>>,
     pub(crate) scopes: Vec<Scope<'a>>,
     pub(crate) return_addresses: Vec<usize>,
+    pub(crate) loop_addresses: Vec<usize>,
 }
 
 impl<'a> BytecodeInterpreter<'a> {
@@ -209,12 +213,13 @@ impl<'a> BytecodeInterpreter<'a> {
                 scopes
             },
             return_addresses: Vec::with_capacity(20),
+            loop_addresses: Vec::with_capacity(20),
         };
         this.add_builtins();
         this
     }
 
-    fn add_builtins(&mut self) {
+    fn register_print(&mut self) {
         // + 5 because the function proper begins after the start function def opcode.
         let print_start_index = self.bytecode.instructions.len() + 1 + USIZE_BYTES;
         let idx = self.identifier_literals.register_value("value");
@@ -240,14 +245,42 @@ impl<'a> BytecodeInterpreter<'a> {
         self.scopes[0]
             .variables
             .insert(print_idx, AnacondaValue::Function(print));
+    }
+    fn register_meta(&mut self) {
+        let meta_start_index = self.bytecode.instructions.len() + 1 + USIZE_BYTES;
+        let idx = self.identifier_literals.register_value("arg");
+        let meta = Function {
+            extra_args: false,
+            params: vec![idx],
+            start_index: meta_start_index,
+        };
+        let def_idx = self.function_definitions.register_value(meta.clone());
+        self.bytecode
+            .push_opcode(OpCodes::StartOfFunctionDefinition);
+        self.bytecode.push_usize(def_idx);
+        self.bytecode.push_opcode(OpCodes::LoadTrue);
 
-        //self.global_scope.variables.insert("print")
+        self.bytecode.push_opcode(OpCodes::Return);
+        self.bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
+        self.bytecode.push_opcode(OpCodes::Pop);
+
+        let meta_idx = self.identifier_literals.register_value("meta");
+        self.scopes[0]
+            .variables
+            .insert(meta_idx, AnacondaValue::Function(meta));
+    }
+    fn add_builtins(&mut self) {
+        self.register_print();
+        self.register_meta();
     }
 
     fn interpret_next_instruction(&mut self) {
         let opcode = self.current_opcode();
-        println!("{:?}", opcode);
         match opcode {
+            OpCodes::StartOfLoop => {
+                self.program_counter += 1;
+                self.loop_addresses.push(self.program_counter);
+            }
             OpCodes::LoadSmallIntLiteral => {
                 self.program_counter += 1;
                 let value = self.bytecode.read_usize(self.program_counter);
@@ -457,7 +490,12 @@ impl<'a> BytecodeInterpreter<'a> {
             OpCodes::EndOfFunctionDefinition => {
                 panic!("Hit EndOfFunctionDefinition instruction. This should never happen.")
             }
-            OpCodes::Break => todo!(),
+            OpCodes::Break => {
+                self.loop_addresses.pop();
+            }
+            OpCodes::Continue => {
+                self.program_counter = *self.loop_addresses.last().unwrap();
+            }
 
             OpCodes::Equals => {
                 self.program_counter += 1;
@@ -747,7 +785,11 @@ impl<'a> BytecodeInterpreter<'a> {
     fn current_opcode_len(&self) -> usize {
         let curr = self.current_opcode();
         match curr {
+            OpCodes::StartOfLoop => 1,
+
             OpCodes::Break => 1,
+            OpCodes::Continue => 1,
+
             OpCodes::CallFunction => 1 + USIZE_BYTES,
             OpCodes::LoadBigIntLiteral => 1 + USIZE_BYTES,
             OpCodes::LoadSmallIntLiteral => 1 + USIZE_BYTES,

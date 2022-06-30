@@ -3,8 +3,8 @@ use crate::lexer::lex::{
     and, assignment_operator_tt, bitshift_left, bitshift_right, bitwise_and, bitwise_or,
     bitwise_xor, break_, comma, comment_tt, docs_block_comment, elif, else_, eoi, equals, false_,
     fun, greater_than, greater_than_equals, identifier, if_, int, l_paren, less_than,
-    less_than_equals, minus, normal_block_comment, not, not_equals, nothing, or, percent, plus,
-    r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt, white_space,
+    less_than_equals, loop_, minus, normal_block_comment, not, not_equals, nothing, or, percent,
+    plus, r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt, white_space,
     ArithmeticOperatorTokenType, AssignmentOperatorTokenType, BooleanComparisonKeywordTokenType,
     ComparisonOperatorTokenType, KeywordTokenType, NotKeywordTokenType, TermOperatorTokenType,
     Token, TokenType, UnaryOperatorTokenType,
@@ -84,6 +84,7 @@ impl<'a> GenerateBytecode for Statement<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StatementType<'a> {
     Return(Option<Expression<'a>>),
+    Continue,
     Break,
     Assignment(usize, AssignmentOperatorTokenType, Expression<'a>),
     Expr(Expression<'a>),
@@ -107,6 +108,9 @@ impl<'a> GenerateBytecode for StatementType<'a> {
             }
             Self::Break => {
                 bytecode.push_opcode(OpCodes::Break);
+            }
+            &Self::Continue => {
+                bytecode.push_opcode(OpCodes::Continue);
             }
             Self::Assignment(i, a, e) => {
                 let operator_opcode = match a {
@@ -371,7 +375,7 @@ impl<'a> GenerateBytecode for FactorExpression<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FactorExpressionType<'a> {
     UnaryFactor(UnaryOperatorTokenType, Box<FactorExpression<'a>>),
-    Call(CallExpression<'a>),
+    Call(Box<CallExpression<'a>>),
 }
 
 impl<'a> GenerateBytecode for FactorExpressionType<'a> {
@@ -466,7 +470,7 @@ pub(crate) enum AtomicExpressionType<'a> {
     For(ForExpression),
     While(WhileExpression),
     FuncDef(FunctionDefinitionExpression<'a>),
-    Loop(LoopExpression),
+    Loop(LoopExpression<'a>),
 }
 
 impl<'a> GenerateBytecode for AtomicExpressionType<'a> {
@@ -572,6 +576,11 @@ impl<'a> GenerateBytecode for AtomicExpressionType<'a> {
                 }
                 bytecode.set_usize(addr_of_body_goto, first_thing_after);
             }
+            AtomicExpressionType::Loop(l) => {
+                bytecode.push_opcode(OpCodes::StartOfLoop);
+                l.body.gen_bytecode(bytecode, ast);
+                bytecode.push_opcode(OpCodes::Continue);
+            }
             unknown => {
                 println!("{:#?}", unknown);
                 todo!()
@@ -613,8 +622,11 @@ pub(crate) struct FunctionDefinitionExpression<'a> {
     pub(crate) args: Vec<Identifier<'a>>,
     pub(crate) body: Block<'a>,
 }
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct LoopExpression;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LoopExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) body: Block<'a>,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ParserError<'a> {
     WrongForm,
@@ -808,6 +820,10 @@ trait ExpectSelf<'a>: Sized {
 
 impl<'a> ExpectSelf<'a> for Block<'a> {
     fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+        println!(
+            "Entered expect block with token: {}",
+            ast.current_token().contents
+        );
         let indentation_level_for_this_block = ast.current_indentation();
         let first_token_index = ast.index;
         ast.step_over_whitespace_and_block_comments();
@@ -837,6 +853,7 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                             _ => return Err(error),
                         },
                     };
+                    println!("Parsed statement: {}", statement.position.contents);
                     children.push(BlockChild::Statement(statement));
                 }
                 std::cmp::Ordering::Greater => {
@@ -869,12 +886,18 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
             indentation_level: indentation_level_for_this_block,
             children,
         };
+        println!("Created block with contents: {}", b.position.contents);
+        println!("END_BLOCK");
         Ok(b)
     }
 }
 
 impl<'a> ExpectSelf<'a> for Statement<'a> {
     fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+        println!(
+            "Current token at start of expect_statement: {}",
+            ast.current_token().contents
+        );
         let indent_at_start = ast.current_indentation();
         ast.step_over_whitespace_and_comments_and_terminators();
         let index_before_statement = ast.index;
@@ -1400,7 +1423,7 @@ impl<'a> ExpectSelf<'a> for FactorExpression<'a> {
                 }
 
                 Ok(FactorExpression {
-                    factor_type: FactorExpressionType::Call(call),
+                    factor_type: FactorExpressionType::Call(Box::new(call)),
                     position: ast
                         .create_position(first_token_index, ast.index - first_token_index + 1),
                 })
@@ -1483,7 +1506,10 @@ impl<'a> ExpectSelf<'a> for CallExpression<'a> {
             ast.index = index_after_atom;
         }
         let position = ast.create_position(first_token_index, ast.index - first_token_index + 1);
-
+        println!(
+            "Parsed call_expression with contents: {}",
+            position.contents
+        );
         Ok(CallExpression {
             position,
             atom,
@@ -1745,11 +1771,46 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                     else_expression,
                 })
             }
-            terminator!() => return Err(ParserError::WrongForm),
+            loop_!() => {
+                let first_token_index = ast.index;
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments();
+                if ast.current_token().token_type != terminator!() {
+                    return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "Expected a terminator after 'loop' keyowrd".into(),
+                    ));
+                }
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments_and_terminators();
+                let body = match Block::expect(ast) {
+                    Ok(v) => v,
+                    Err(e) => match e {
+                        ParserError::WrongForm => {
+                            return Err(ast.create_parse_error_with_message(
+                                first_token_index,
+                                ast.index - first_token_index + 1,
+                                "Expected an indented block after 'loop' keyword".into(),
+                            ))
+                        }
+                        _ => return Err(e),
+                    },
+                };
+                AtomicExpressionType::Loop(LoopExpression {
+                    position: ast
+                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    body,
+                })
+            }
+            terminator!() | r_paren!() => return Err(ParserError::WrongForm),
             x => {
                 println!("{x:#?}");
                 println!("{}", ast.index);
-                println!("{:#?}", ast.tokens[ast.index - 1].token_type);
+                for (i, t) in ast.tokens.iter().enumerate() {
+                    println!("{i}: {}", t.contents);
+                }
+                //println!("{:#?}", ast.tokens[ast.index - 1].token_type);
                 unreachable!()
             }
         };
