@@ -1,9 +1,16 @@
+fibbonacci = fun(num)
+    if num < 2
+        return 1
+    
+    return fibbonacci(num - 1) + fibbonacci(num - 2)
 
-main = fun ()
-    num = 0
+main = fun() 
+    i = 0
     loop
-        print(num)
-        num = (num + 1) % 10
+        if i == 30
+            break
+        println(fibbonacci(i))
+        i += 1
 
-if meta('is_main_file')
-    main()
+
+main()

@@ -53,15 +53,32 @@ impl<T: PartialEq + Eq + Hash + Debug + Clone> ValueStore<T> {
 pub(crate) struct Bytecode {
     pub(crate) instructions: Vec<u8>,
 }
-
+impl Display for Bytecode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut pc = 0;
+        while pc < self.instructions.len() {
+            let curr_opcode = self.instructions[pc];
+            let curr_opcode = OpCodes::try_from(curr_opcode).unwrap();
+            if curr_opcode.len() == 1 {
+                pc += 1;
+                writeln!(f, "{:#?}", curr_opcode)?
+            } else {
+                pc += 1;
+                writeln!(f, "{:#?} {}", curr_opcode, self.read_usize(pc))?;
+                pc += USIZE_BYTES;
+            }
+        }
+        Ok(())
+    }
+}
 impl Bytecode {
     pub(crate) fn push_opcode(&mut self, instruction: OpCodes) {
-        // println!("Pushed instruction {instruction:#?} into bytecode");
+        //println!("Pushed instruction {instruction:#?} into bytecode");
         self.instructions.push(instruction as u8)
     }
 
     pub(crate) fn push_usize(&mut self, num: usize) {
-        // println!("Pushed usize {num:#?} into bytecode");
+        //println!("Pushed usize {num:#?} into bytecode");
 
         self.instructions.extend_from_slice(&num.to_le_bytes())
     }
@@ -102,7 +119,7 @@ pub(crate) fn generate_bytecode(ast: &mut Ast<'_>) -> Bytecode {
 use num_enum::TryFromPrimitive;
 // BYTECODE INSTRUCTIONS:
 #[repr(u8)]
-#[derive(Debug, TryFromPrimitive, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, TryFromPrimitive, PartialEq, Eq)]
 pub(crate) enum OpCodes {
     LoadSmallIntLiteral = 0,
     LoadBigIntLiteral,
@@ -113,6 +130,8 @@ pub(crate) enum OpCodes {
     LoadTrue,
 
     Print,
+    Println,
+
     CallFunction,
     Return,
     Pop,
@@ -167,6 +186,80 @@ pub(crate) enum OpCodes {
     Goto,
 }
 
+impl OpCodes {
+    const fn len(self) -> usize {
+        match self {
+            OpCodes::StartOfLoop => 1 + USIZE_BYTES,
+
+            OpCodes::Break => 1,
+            OpCodes::Continue => 1,
+
+            OpCodes::CallFunction => 1 + USIZE_BYTES,
+            OpCodes::LoadBigIntLiteral => 1 + USIZE_BYTES,
+            OpCodes::LoadSmallIntLiteral => 1 + USIZE_BYTES,
+            OpCodes::LoadVariableValueFromIndex => 1 + USIZE_BYTES,
+            OpCodes::Pop => 1,
+            OpCodes::Print => 1,
+            OpCodes::Println => 1,
+            OpCodes::PrintStack => 1,
+            OpCodes::Return => 1,
+            OpCodes::StartOfFunctionDefinition => 1 + USIZE_BYTES,
+            OpCodes::EndOfFunctionDefinition => 1,
+            OpCodes::BeginBlock => 1,
+            OpCodes::EndBlock => 1,
+            OpCodes::LoadStringLiteral => 1 + USIZE_BYTES,
+            OpCodes::LoadNothing => 1,
+            OpCodes::Assign => 1 + USIZE_BYTES,
+            OpCodes::AddAndAssign => 1 + USIZE_BYTES,
+            OpCodes::SubAndAssign => 1 + USIZE_BYTES,
+            OpCodes::MultiplyAndAssign => 1 + USIZE_BYTES,
+            OpCodes::DivideAndAssign => 1 + USIZE_BYTES,
+            OpCodes::ModuloAndAssign => 1 + USIZE_BYTES,
+
+            OpCodes::BitwiseAndAndAssign => 1 + USIZE_BYTES,
+            OpCodes::BitwiseOrAndAssign => 1 + USIZE_BYTES,
+            OpCodes::BitwiseXorAndAssign => 1 + USIZE_BYTES,
+
+            OpCodes::BitshiftLeftAndAssign => 1 + USIZE_BYTES,
+            OpCodes::BitshiftRightAndAssign => 1 + USIZE_BYTES,
+
+            OpCodes::BooleanAnd => 1,
+            OpCodes::BooleanOr => 1,
+            OpCodes::BooleanNot => 1,
+
+            OpCodes::Equals => 1,
+            OpCodes::NotEquals => 1,
+            OpCodes::LessThan => 1,
+            OpCodes::LessThanEquals => 1,
+            OpCodes::GreaterThan => 1,
+            OpCodes::GreaterThanEquals => 1,
+
+            OpCodes::UnaryMinus => 1,
+            OpCodes::UnaryPlus => 1,
+            OpCodes::BitwiseNot => 1,
+
+            OpCodes::BitwiseOr => 1,
+            OpCodes::BitwiseXor => 1,
+            OpCodes::BitwiseAnd => 1,
+
+            OpCodes::Add => 1,
+            OpCodes::Sub => 1,
+
+            OpCodes::Modulo => 1,
+            OpCodes::Multiply => 1,
+            OpCodes::Divide => 1,
+            OpCodes::BitshiftLeft => 1,
+            OpCodes::BitshiftRight => 1,
+
+            OpCodes::LoadFalse => 1,
+            OpCodes::LoadTrue => 1,
+
+            OpCodes::Goto => 1 + USIZE_BYTES,
+            OpCodes::IfTrueGoto => 1 + USIZE_BYTES,
+            OpCodes::IfFalseGoto => 1 + USIZE_BYTES,
+        }
+    }
+}
 impl Display for OpCodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:#?}", self)
@@ -176,6 +269,12 @@ impl Display for OpCodes {
 pub(crate) struct Scope<'a> {
     variables: HashMap<usize, AnacondaValue<'a>, BuildHasherDefault<XxHash64>>,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StackFrame<'a> {
+    Scope(Scope<'a>),
+    Function(usize),
+    Loop(LoopAddresses),
+}
 
 impl<'a> Scope<'a> {
     fn new() -> Self {
@@ -183,6 +282,11 @@ impl<'a> Scope<'a> {
             variables: HashMap::default(),
         }
     }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LoopAddresses {
+    pub(crate) address_of_start: usize,
+    pub(crate) address_of_end: usize,
 }
 pub(crate) struct BytecodeInterpreter<'a> {
     pub(crate) program_counter: usize,
@@ -192,9 +296,7 @@ pub(crate) struct BytecodeInterpreter<'a> {
     pub(crate) identifier_literals: ValueStore<&'a str>,
     pub(crate) function_definitions: ValueStore<Function>,
     pub(crate) stack: Vec<AnacondaValue<'a>>,
-    pub(crate) scopes: Vec<Scope<'a>>,
-    pub(crate) return_addresses: Vec<usize>,
-    pub(crate) loop_addresses: Vec<usize>,
+    pub(crate) stack_frames: Vec<StackFrame<'a>>,
 }
 
 impl<'a> BytecodeInterpreter<'a> {
@@ -207,45 +309,16 @@ impl<'a> BytecodeInterpreter<'a> {
             program_counter: 0,
             bytecode,
             stack: Vec::with_capacity(100),
-            scopes: {
-                let mut scopes = Vec::with_capacity(20);
-                scopes.push(Scope::new());
-                scopes
+            stack_frames: {
+                let mut stack_frames = Vec::with_capacity(20);
+                stack_frames.push(StackFrame::Scope(Scope::new()));
+                stack_frames
             },
-            return_addresses: Vec::with_capacity(20),
-            loop_addresses: Vec::with_capacity(20),
         };
         this.add_builtins();
         this
     }
 
-    fn register_print(&mut self) {
-        // + 5 because the function proper begins after the start function def opcode.
-        let print_start_index = self.bytecode.instructions.len() + 1 + USIZE_BYTES;
-        let idx = self.identifier_literals.register_value("value");
-        let print = Function {
-            extra_args: false,
-            params: vec![idx],
-            start_index: print_start_index,
-        };
-        let def_idx = self.function_definitions.register_value(print.clone());
-        self.bytecode
-            .push_opcode(OpCodes::StartOfFunctionDefinition);
-        self.bytecode.push_usize(def_idx);
-        self.bytecode
-            .push_opcode(OpCodes::LoadVariableValueFromIndex);
-        self.bytecode.push_usize(idx);
-        self.bytecode.push_opcode(OpCodes::Print);
-        self.bytecode.push_opcode(OpCodes::LoadNothing);
-        self.bytecode.push_opcode(OpCodes::Return);
-        self.bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
-        self.bytecode.push_opcode(OpCodes::Pop);
-
-        let print_idx = self.identifier_literals.register_value("print");
-        self.scopes[0]
-            .variables
-            .insert(print_idx, AnacondaValue::Function(print));
-    }
     fn register_meta(&mut self) {
         let meta_start_index = self.bytecode.instructions.len() + 1 + USIZE_BYTES;
         let idx = self.identifier_literals.register_value("arg");
@@ -265,21 +338,66 @@ impl<'a> BytecodeInterpreter<'a> {
         self.bytecode.push_opcode(OpCodes::Pop);
 
         let meta_idx = self.identifier_literals.register_value("meta");
-        self.scopes[0]
-            .variables
-            .insert(meta_idx, AnacondaValue::Function(meta));
+        match self.stack_frames[0] {
+            StackFrame::Scope(ref mut s) => {
+                s.variables.insert(meta_idx, AnacondaValue::Function(meta));
+            }
+            _ => unreachable!(),
+        }
     }
     fn add_builtins(&mut self) {
-        self.register_print();
+        macro_rules! register_print_fn {
+            ($print_opcode: expr, $func_name: expr) => {
+                // + 5 because the function proper begins after the start function def opcode.
+                let print_start_index = self.bytecode.instructions.len() + 1 + USIZE_BYTES;
+                let idx = self.identifier_literals.register_value("value");
+                let print = Function {
+                    extra_args: false,
+                    params: vec![idx],
+                    start_index: print_start_index,
+                };
+                let def_idx = self.function_definitions.register_value(print.clone());
+                self.bytecode
+                    .push_opcode(OpCodes::StartOfFunctionDefinition);
+                self.bytecode.push_usize(def_idx);
+                self.bytecode
+                    .push_opcode(OpCodes::LoadVariableValueFromIndex);
+                self.bytecode.push_usize(idx);
+                self.bytecode.push_opcode($print_opcode);
+                self.bytecode.push_opcode(OpCodes::LoadNothing);
+                self.bytecode.push_opcode(OpCodes::Return);
+                self.bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
+                self.bytecode.push_opcode(OpCodes::Pop);
+
+                let print_idx = self.identifier_literals.register_value($func_name);
+                match self.stack_frames[0] {
+                    StackFrame::Scope(ref mut s) => {
+                        s.variables
+                            .insert(print_idx, AnacondaValue::Function(print));
+                    }
+                    _ => unreachable!(),
+                }
+            };
+        }
+        register_print_fn!(OpCodes::Print, "print");
+        register_print_fn!(OpCodes::Println, "println");
         self.register_meta();
     }
 
     fn interpret_next_instruction(&mut self) {
         let opcode = self.current_opcode();
+        //println!("{opcode:#?}");
+        //println!("{:#?}", self.stack);
         match opcode {
             OpCodes::StartOfLoop => {
                 self.program_counter += 1;
-                self.loop_addresses.push(self.program_counter);
+                let address_of_end = self.bytecode.read_usize(self.program_counter);
+                self.program_counter += USIZE_BYTES;
+                let address_of_start = self.program_counter;
+                self.stack_frames.push(StackFrame::Loop(LoopAddresses {
+                    address_of_start,
+                    address_of_end,
+                }));
             }
             OpCodes::LoadSmallIntLiteral => {
                 self.program_counter += 1;
@@ -299,8 +417,11 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.program_counter += 1;
                 let index = self.bytecode.read_usize(self.program_counter);
                 self.program_counter += USIZE_BYTES;
-                self.stack
-                    .push(self.get_var_by_index(index).unwrap().clone());
+                //println!("{:#?}", self.identifier_literals.data.get(&index));
+                //let id = self.identifier_literals.data.get(&index);
+                let val = self.get_var_by_index(index).unwrap().clone();
+                //println!("{id:#?} = {val:#?}");
+                self.stack.push(val);
             }
             OpCodes::LoadStringLiteral => {
                 self.program_counter += 1;
@@ -310,23 +431,27 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.stack.push(AnacondaValue::String(Cow::Borrowed(value)));
             }
             OpCodes::CallFunction => {
-                self.scopes.push(Scope::new());
                 self.program_counter += 1;
                 let args_len = self.bytecode.read_usize(self.program_counter);
                 self.program_counter += USIZE_BYTES;
+                self.stack_frames
+                    .push(StackFrame::Function(self.program_counter));
+                self.stack_frames.push(StackFrame::Scope(Scope::new()));
+
                 let f = match self.stack.pop().unwrap() {
                     AnacondaValue::Function(f) => f,
                     invalid => panic!("{invalid:#?} is not a valid function"),
                 };
-                let idx_of_last = self.scopes.len() - 1;
-                let newest_scope = &mut self.scopes[idx_of_last];
-                for i in (0..args_len).rev() {
-                    let idx_of_var = f.params[i];
-                    newest_scope
-                        .variables
-                        .insert(idx_of_var, self.stack.pop().unwrap());
+                let idx_of_last = self.stack_frames.len() - 1;
+                match self.stack_frames[idx_of_last] {
+                    StackFrame::Scope(ref mut s) => {
+                        for i in (0..args_len).rev() {
+                            let idx_of_var = f.params[i];
+                            s.variables.insert(idx_of_var, self.stack.pop().unwrap());
+                        }
+                    }
+                    _ => unreachable!(),
                 }
-                self.return_addresses.push(self.program_counter);
                 self.program_counter = f.start_index;
             }
             OpCodes::Pop => {
@@ -334,10 +459,24 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.program_counter += 1;
             }
             OpCodes::Return => {
-                self.scopes.pop();
-                self.program_counter = self.return_addresses.pop().unwrap();
+                while let StackFrame::Scope(_) | StackFrame::Loop(_) =
+                    self.stack_frames.last().unwrap()
+                {
+                    self.stack_frames.pop();
+                }
+                match self.stack_frames.pop().unwrap() {
+                    StackFrame::Function(address) => {
+                        self.program_counter = address;
+                    }
+                    _ => unreachable!(),
+                }
             }
             OpCodes::Print => {
+                let to_print = self.stack.pop().unwrap();
+                print!("{to_print}");
+                self.program_counter += 1;
+            }
+            OpCodes::Println => {
                 let to_print = self.stack.pop().unwrap();
                 println!("{to_print}");
                 self.program_counter += 1;
@@ -375,11 +514,14 @@ impl<'a> BytecodeInterpreter<'a> {
             }
 
             OpCodes::BeginBlock => {
-                self.scopes.push(Scope::new());
+                self.stack_frames.push(StackFrame::Scope(Scope::new()));
                 self.program_counter += 1;
             }
             OpCodes::EndBlock => {
-                self.scopes.pop();
+                let v = self.stack_frames.pop().unwrap();
+                if !matches!(v, StackFrame::Scope(_)) {
+                    panic!("Reached end of block but the last stackframe was not a block! This should never happen! Here's what we got instead: {:#?}", v);
+                }
                 self.program_counter += 1;
             }
             OpCodes::Assign
@@ -491,10 +633,26 @@ impl<'a> BytecodeInterpreter<'a> {
                 panic!("Hit EndOfFunctionDefinition instruction. This should never happen.")
             }
             OpCodes::Break => {
-                self.loop_addresses.pop();
+                while let Some(StackFrame::Scope(scope)) = self.stack_frames.last() {
+                    self.stack_frames.pop().unwrap();
+                }
+                match self.stack_frames.pop().unwrap() {
+                    StackFrame::Loop(l) => {
+                        self.program_counter = l.address_of_end;
+                    }
+                    _ => panic!("Break instruction was not inside a loop!"),
+                }
             }
             OpCodes::Continue => {
-                self.program_counter = *self.loop_addresses.last().unwrap();
+                while let Some(StackFrame::Scope(scope)) = self.stack_frames.last() {
+                    self.stack_frames.pop().unwrap();
+                }
+                match self.stack_frames.last().unwrap() {
+                    StackFrame::Loop(l) => {
+                        self.program_counter = l.address_of_start;
+                    }
+                    _ => panic!("Continue instruction was not inside a loop!"),
+                }
             }
 
             OpCodes::Equals => {
@@ -783,83 +941,14 @@ impl<'a> BytecodeInterpreter<'a> {
     }
     /// Returns how many bytes in the bytecode the current opcode and its arguments take up.
     fn current_opcode_len(&self) -> usize {
-        let curr = self.current_opcode();
-        match curr {
-            OpCodes::StartOfLoop => 1,
-
-            OpCodes::Break => 1,
-            OpCodes::Continue => 1,
-
-            OpCodes::CallFunction => 1 + USIZE_BYTES,
-            OpCodes::LoadBigIntLiteral => 1 + USIZE_BYTES,
-            OpCodes::LoadSmallIntLiteral => 1 + USIZE_BYTES,
-            OpCodes::LoadVariableValueFromIndex => 1 + USIZE_BYTES,
-            OpCodes::Pop => 1,
-            OpCodes::Print => 1,
-            OpCodes::PrintStack => 1,
-            OpCodes::Return => 1,
-            OpCodes::StartOfFunctionDefinition => 1 + USIZE_BYTES,
-            OpCodes::EndOfFunctionDefinition => 1,
-            OpCodes::BeginBlock => 1,
-            OpCodes::EndBlock => 1,
-            OpCodes::LoadStringLiteral => 1 + USIZE_BYTES,
-            OpCodes::LoadNothing => 1,
-            OpCodes::Assign => 1 + USIZE_BYTES,
-            OpCodes::AddAndAssign => 1 + USIZE_BYTES,
-            OpCodes::SubAndAssign => 1 + USIZE_BYTES,
-            OpCodes::MultiplyAndAssign => 1 + USIZE_BYTES,
-            OpCodes::DivideAndAssign => 1 + USIZE_BYTES,
-            OpCodes::ModuloAndAssign => 1 + USIZE_BYTES,
-
-            OpCodes::BitwiseAndAndAssign => 1 + USIZE_BYTES,
-            OpCodes::BitwiseOrAndAssign => 1 + USIZE_BYTES,
-            OpCodes::BitwiseXorAndAssign => 1 + USIZE_BYTES,
-
-            OpCodes::BitshiftLeftAndAssign => 1 + USIZE_BYTES,
-            OpCodes::BitshiftRightAndAssign => 1 + USIZE_BYTES,
-
-            OpCodes::BooleanAnd => 1,
-            OpCodes::BooleanOr => 1,
-            OpCodes::BooleanNot => 1,
-
-            OpCodes::Equals => 1,
-            OpCodes::NotEquals => 1,
-            OpCodes::LessThan => 1,
-            OpCodes::LessThanEquals => 1,
-            OpCodes::GreaterThan => 1,
-            OpCodes::GreaterThanEquals => 1,
-
-            OpCodes::UnaryMinus => 1,
-            OpCodes::UnaryPlus => 1,
-            OpCodes::BitwiseNot => 1,
-
-            OpCodes::BitwiseOr => 1,
-            OpCodes::BitwiseXor => 1,
-            OpCodes::BitwiseAnd => 1,
-
-            OpCodes::Add => 1,
-            OpCodes::Sub => 1,
-
-            OpCodes::Modulo => 1,
-            OpCodes::Multiply => 1,
-            OpCodes::Divide => 1,
-            OpCodes::BitshiftLeft => 1,
-            OpCodes::BitshiftRight => 1,
-
-            OpCodes::LoadFalse => 1,
-            OpCodes::LoadTrue => 1,
-
-            OpCodes::Goto => 1 + USIZE_BYTES,
-            OpCodes::IfTrueGoto => 1 + USIZE_BYTES,
-            OpCodes::IfFalseGoto => 1 + USIZE_BYTES,
-        }
+        self.current_opcode().len()
     }
 
     pub(crate) fn interpret_bytecode(&mut self) {
         while self.program_counter < self.bytecode.instructions.len() {
             self.interpret_next_instruction();
         }
-        println!("{:#?}", self.scopes);
+        println!("{:#?}", self.stack_frames);
         println!("{:#?}", self.stack);
     }
 
@@ -876,10 +965,12 @@ impl<'a> BytecodeInterpreter<'a> {
     }
 
     fn get_var_by_index<'b>(&'b self, idx: usize) -> Option<&'b AnacondaValue<'a>> {
-        for i in (0..self.scopes.len()).rev() {
-            let scope = &self.scopes[i];
-            if let Some(v) = scope.variables.get(&idx) {
-                return Some(v);
+        for i in (0..self.stack_frames.len()).rev() {
+            let scope = &self.stack_frames[i];
+            if let StackFrame::Scope(scope) = scope {
+                if let Some(v) = scope.variables.get(&idx) {
+                    return Some(v);
+                }
             }
         }
         None
@@ -887,17 +978,22 @@ impl<'a> BytecodeInterpreter<'a> {
 
     fn get_var_by_index_mut<'b>(&'b mut self, idx: usize) -> &'b mut AnacondaValue<'a> {
         let this = self as *mut Self;
-        let len = self.scopes.len();
+        let len = self.stack_frames.len();
         for i in (0..len).rev() {
-            let scope = unsafe { &mut (*this).scopes[i] as *mut Scope };
-            if let Some(v) = unsafe { (*scope).variables.get_mut(&idx) } {
-                return v;
+            let scope = unsafe { &mut (*this).stack_frames[i] as *mut StackFrame };
+            if let StackFrame::Scope(scope) = unsafe { &mut (*scope) } {
+                if let Some(v) = unsafe { scope.variables.get_mut(&idx) } {
+                    return v;
+                }
             }
         }
-        self.scopes[len - 1]
-            .variables
-            .insert(idx, AnacondaValue::Nothing);
-        self.scopes[len - 1].variables.get_mut(&idx).unwrap()
+        for sf in self.stack_frames.iter_mut() {
+            if let StackFrame::Scope(scope) = sf {
+                scope.variables.insert(idx, AnacondaValue::Nothing);
+                return scope.variables.get_mut(&idx).unwrap();
+            }
+        }
+        unreachable!()
     }
 
     fn get_var_by_identifier<'b>(&'b self, ident: &'a str) -> Option<&'b AnacondaValue<'a>> {
@@ -909,15 +1005,23 @@ impl<'a> BytecodeInterpreter<'a> {
     }
 
     fn set_var_by_index<'b>(&'b mut self, index: usize, val: AnacondaValue<'a>) {
-        for i in (0..self.scopes.len()).rev() {
-            let scope = &mut self.scopes[i];
-            if scope.variables.get(&index).is_some() {
+        for i in (0..self.stack_frames.len()).rev() {
+            let stack_frame = &mut self.stack_frames[i];
+            if let StackFrame::Scope(scope) = stack_frame {
+                if scope.variables.get(&index).is_some() {
+                    scope.variables.insert(index, val);
+                    return;
+                }
+            }
+           
+        }
+        for sf in self.stack_frames.iter_mut() {
+            if let StackFrame::Scope(scope) = sf {
                 scope.variables.insert(index, val);
                 return;
             }
         }
-        let len = self.scopes.len();
-        self.scopes[len - 1].variables.insert(index, val);
+        unreachable!()
     }
 }
 

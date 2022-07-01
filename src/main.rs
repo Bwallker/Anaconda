@@ -133,9 +133,11 @@ fn run() -> color_eyre::Result<()> {
             let ast = parse(&contents);
             match ast {
                 Ok(mut v) => {
+                    let base_block = v.program.base_block.clone();
                     let bytecode = generate_bytecode(&mut v);
+                    v.program.base_block = base_block;
                     std::fs::write("ast.txt", format!("{v:#?}"))?;
-                    std::fs::write("bytecode.txt", format!("{bytecode:#?}"))?;
+                    std::fs::write("bytecode.txt", format!("{bytecode}"))?;
                 }
                 Err(e) => return Err(eyre!(format!("{e}"))),
             }
