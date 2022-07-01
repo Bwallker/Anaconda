@@ -1000,7 +1000,7 @@ impl<'a> BytecodeInterpreter<'a> {
                 }
             }
         }
-        for sf in self.stack_frames.iter_mut() {
+        for sf in self.stack_frames.iter_mut().rev() {
             if let StackFrame::Scope(scope) = sf {
                 scope.variables.insert(idx, AnacondaValue::Nothing);
                 return scope.variables.get_mut(&idx).unwrap();
@@ -1028,7 +1028,7 @@ impl<'a> BytecodeInterpreter<'a> {
             }
            
         }
-        for sf in self.stack_frames.iter_mut() {
+        for sf in self.stack_frames.iter_mut().rev() {
             if let StackFrame::Scope(scope) = sf {
                 scope.variables.insert(index, val);
                 return;

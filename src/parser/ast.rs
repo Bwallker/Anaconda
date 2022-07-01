@@ -895,6 +895,7 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                             _ => return Err(error),
                         },
                     };
+                    println!("Parsed block: {}", block.position.contents);
                     children.push(BlockChild::Block(block));
                 }
             }
