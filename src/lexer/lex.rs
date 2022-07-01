@@ -388,7 +388,19 @@ pub(crate) use fun;
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum LoopKeywordTokenType {
     Loop,
+    While,
 }
+
+macro_rules! loop_kw_tt {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Loop(_))
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Loop($i))
+    };
+}
+
+pub(crate) use loop_kw_tt;
 
 macro_rules! loop_ {
     () => {
@@ -399,6 +411,18 @@ macro_rules! loop_ {
 }
 
 pub(crate) use loop_;
+
+macro_rules! while_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Loop(
+            crate::lexer::lex::LoopKeywordTokenType::While,
+        ))
+    };
+}
+
+pub(crate) use while_;
+
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum ValueKeywordTokenType {
     Nothing,
@@ -1736,7 +1760,7 @@ impl<'a> Lexer<'a> {
         tag("\r", terminator!()).boxed(),
         tag("\n", terminator!()).boxed(),
 
-        
+
         tag("/=", slash_assign!()).boxed(),
         tag("*=", star_assign!()).boxed(),
         tag("%=", procent_assign!()).boxed(),
@@ -1794,6 +1818,7 @@ impl<'a> Lexer<'a> {
         keyword("else", else_!()).boxed(),
         keyword("not", not!()).boxed(),
         keyword("loop", loop_!()).boxed(),
+        keyword("while", while_!()).boxed(),
         keyword("break", break_!()).boxed(),
         keyword("continue", continue_!()).boxed(),
         keyword("return", return_!()).boxed(),

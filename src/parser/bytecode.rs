@@ -138,6 +138,7 @@ pub(crate) enum OpCodes {
     PrintStack,
     Continue,
     Break,
+    BreakIfFalse,
     StartOfFunctionDefinition,
     EndOfFunctionDefinition,
     BeginBlock,
@@ -192,6 +193,7 @@ impl OpCodes {
             OpCodes::StartOfLoop => 1 + USIZE_BYTES,
 
             OpCodes::Break => 1,
+            OpCodes::BreakIfFalse => 1,
             OpCodes::Continue => 1,
 
             OpCodes::CallFunction => 1 + USIZE_BYTES,
@@ -382,6 +384,18 @@ impl<'a> BytecodeInterpreter<'a> {
         register_print_fn!(OpCodes::Print, "print");
         register_print_fn!(OpCodes::Println, "println");
         self.register_meta();
+    }
+
+    fn break_from_loop(&mut self) {
+        while let Some(StackFrame::Scope(_)) = self.stack_frames.last() {
+            self.stack_frames.pop().unwrap();
+        }
+        match self.stack_frames.pop().unwrap() {
+            StackFrame::Loop(l) => {
+                self.program_counter = l.address_of_end;
+            }
+            _ => panic!("Break instruction was not inside a loop!"),
+        }
     }
 
     fn interpret_next_instruction(&mut self) {
@@ -633,14 +647,13 @@ impl<'a> BytecodeInterpreter<'a> {
                 panic!("Hit EndOfFunctionDefinition instruction. This should never happen.")
             }
             OpCodes::Break => {
-                while let Some(StackFrame::Scope(scope)) = self.stack_frames.last() {
-                    self.stack_frames.pop().unwrap();
-                }
-                match self.stack_frames.pop().unwrap() {
-                    StackFrame::Loop(l) => {
-                        self.program_counter = l.address_of_end;
-                    }
-                    _ => panic!("Break instruction was not inside a loop!"),
+                self.break_from_loop();   
+            }
+            OpCodes::BreakIfFalse => {
+                self.program_counter += 1;
+                let val = self.stack.pop().unwrap();
+                if !val.as_bool() {
+                    self.break_from_loop();
                 }
             }
             OpCodes::Continue => {

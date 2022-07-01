@@ -6,9 +6,7 @@ fibbonacci = fun(num)
 
 main = fun() 
     i = 0
-    loop
-        if i == 30
-            break
+    while i < 30
         println(fibbonacci(i))
         i += 1
 

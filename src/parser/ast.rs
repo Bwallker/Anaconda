@@ -7,7 +7,7 @@ use crate::lexer::lex::{
     plus, r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt, white_space,
     ArithmeticOperatorTokenType, AssignmentOperatorTokenType, BooleanComparisonKeywordTokenType,
     ComparisonOperatorTokenType, KeywordTokenType, NotKeywordTokenType, TermOperatorTokenType,
-    Token, TokenType, UnaryOperatorTokenType,
+    Token, TokenType, UnaryOperatorTokenType, while_,
 };
 use ibig::{ibig, IBig};
 use std::fmt::{Debug, Display};
@@ -90,6 +90,7 @@ pub(crate) enum StatementType<'a> {
     Expr(Expression<'a>),
     IfStatement(IfStatement<'a>),
     LoopStatement(LoopStatement<'a>),
+    WhileStatement(WhileStatement<'a>),
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct IfStatement<'a> {
@@ -115,6 +116,12 @@ pub(crate) struct ElseExpression<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LoopStatement<'a> {
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) body: Block<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WhileStatement<'a> {
+    pub(crate) condition: Expression<'a>,
     pub(crate) body: Block<'a>,
 }
 impl<'a> GenerateBytecode for StatementType<'a> {
@@ -219,6 +226,17 @@ impl<'a> GenerateBytecode for StatementType<'a> {
                 let addr_of_loop_start = bytecode.instructions.len();
                 bytecode.push_usize(0);
                 l.body.gen_bytecode(bytecode, ast);
+                bytecode.push_opcode(OpCodes::Continue);
+                let end_addr = bytecode.instructions.len();
+                bytecode.set_usize(addr_of_loop_start, end_addr);
+            }
+            StatementType::WhileStatement(w) => {
+                bytecode.push_opcode(OpCodes::StartOfLoop);
+                let addr_of_loop_start = bytecode.instructions.len();
+                bytecode.push_usize(0);
+                w.condition.gen_bytecode(bytecode, ast);
+                bytecode.push_opcode(OpCodes::BreakIfFalse);
+                w.body.gen_bytecode(bytecode, ast);
                 bytecode.push_opcode(OpCodes::Continue);
                 let end_addr = bytecode.instructions.len();
                 bytecode.set_usize(addr_of_loop_start, end_addr);
@@ -554,7 +572,6 @@ pub(crate) enum AtomicExpressionType<'a> {
     List(ListExpression),
     Dict(DictExpression),
     For(ForExpression),
-    While(WhileExpression),
     FuncDef(FunctionDefinitionExpression<'a>),
 }
 
@@ -1146,7 +1163,56 @@ impl<'a> ExpectSelf<'a> for Statement<'a> {
                     position: ast.create_position(first_token_index, ast.index - first_token_index + 1)
                 });
             }
-            
+            while_!() => {
+                let first_token_index = ast.index;
+                ast.index += 1;
+                ast.step_over_whitespace_and_block_comments();
+                let condition = match Expression::expect(ast) {
+                    Ok(v) => v,
+                    Err(e) => match e {
+                        ParserError::WrongForm => {
+                            return Err(ast.create_parse_error_with_message(
+                                first_token_index,
+                                ast.index - first_token_index + 1,
+                                "Expected an expression after 'while' keyword".into(),
+                            ))
+                        }
+                        _ => return Err(e),
+                    },
+                };
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments();
+                if ast.current_token().token_type != terminator!() {
+                    return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "Expected a terminator after 'while' condition".into(),
+                    ));
+                }
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments_and_terminators();
+                let body = match Block::expect(ast) {
+                    Ok(v) => v,
+                    Err(e) => match e {
+                        ParserError::WrongForm => {
+                            return Err(ast.create_parse_error_with_message(
+                                first_token_index,
+                                ast.index - first_token_index + 1,
+                                "Expected an indented block after 'while' condition".into(),
+                            ))
+                        }
+                        _ => return Err(e),
+                    },
+                };
+                let statement_type = StatementType::WhileStatement(WhileStatement {
+                    condition,
+                    body,
+                });
+                return Ok(Statement {
+                    statement_type,
+                    position: ast.create_position(first_token_index, ast.index - first_token_index + 1)
+                });
+            }
             identifier!() => {
                 let first_token_index = ast.index;
                 let ident_id = ast
