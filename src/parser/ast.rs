@@ -1,13 +1,13 @@
 use super::bytecode::{Bytecode, Function, OpCodes, Program, ValueStore, USIZE_BYTES};
 use crate::lexer::lex::{
     and, assignment_operator_tt, bitshift_left, bitshift_right, bitwise_and, bitwise_or,
-    bitwise_xor, break_, comma, comment_tt, docs_block_comment, elif, else_, eoi, equals, false_,
-    fun, greater_than, greater_than_equals, identifier, if_, int, l_paren, less_than,
-    less_than_equals, loop_, minus, normal_block_comment, not, not_equals, nothing, or, percent,
-    plus, r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt, white_space,
-    ArithmeticOperatorTokenType, AssignmentOperatorTokenType, BooleanComparisonKeywordTokenType,
-    ComparisonOperatorTokenType, KeywordTokenType, NotKeywordTokenType, TermOperatorTokenType,
-    Token, TokenType, UnaryOperatorTokenType, while_,
+    bitwise_xor, break_, comma, comment_tt, continue_, docs_block_comment, elif, else_, eoi,
+    equals, false_, fun, greater_than, greater_than_equals, identifier, if_, int, l_paren,
+    less_than, less_than_equals, loop_, minus, normal_block_comment, not, not_equals, nothing, or,
+    percent, plus, r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt,
+    while_, white_space, ArithmeticOperatorTokenType, AssignmentOperatorTokenType,
+    BooleanComparisonKeywordTokenType, ComparisonOperatorTokenType, KeywordTokenType,
+    NotKeywordTokenType, TermOperatorTokenType, Token, TokenType, UnaryOperatorTokenType, exponent,
 };
 use ibig::{ibig, IBig};
 use std::fmt::{Debug, Display};
@@ -40,7 +40,7 @@ pub(crate) struct Block<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum BlockChild<'a> {
-    Statement(Statement<'a>),
+    Statement(Box<Statement<'a>>),
     Block(Block<'a>),
 }
 
@@ -88,7 +88,7 @@ pub(crate) enum StatementType<'a> {
     Break,
     Assignment(usize, AssignmentOperatorTokenType, Expression<'a>),
     Expr(Expression<'a>),
-    IfStatement(IfStatement<'a>),
+    IfStatement(Box<IfStatement<'a>>),
     LoopStatement(LoopStatement<'a>),
     WhileStatement(WhileStatement<'a>),
 }
@@ -165,6 +165,7 @@ impl<'a> GenerateBytecode for StatementType<'a> {
                     AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
                     AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
                     AssignmentOperatorTokenType::ProcentAssign => OpCodes::ModuloAndAssign,
+                    &AssignmentOperatorTokenType::ExponentAssign => OpCodes::ExponentAndAssign,
                 };
                 e.gen_bytecode(bytecode, ast);
                 bytecode.push_opcode(operator_opcode);
@@ -480,14 +481,14 @@ impl<'a> GenerateBytecode for FactorExpression<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FactorExpressionType<'a> {
     UnaryFactor(UnaryOperatorTokenType, Box<FactorExpression<'a>>),
-    Call(Box<CallExpression<'a>>),
+    Exponent(Box<ExponentExpression<'a>>),
 }
 
 impl<'a> GenerateBytecode for FactorExpressionType<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
         match self {
-            Self::Call(call) => {
-                call.gen_bytecode(bytecode, ast);
+            Self::Exponent(exponent) => {
+                exponent.gen_bytecode(bytecode, ast);
             }
             Self::UnaryFactor(u, f) => {
                 f.gen_bytecode(bytecode, ast);
@@ -498,6 +499,42 @@ impl<'a> GenerateBytecode for FactorExpressionType<'a> {
                 })
             }
         }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExponentExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) main_expression: CallExpression<'a>,
+    pub(crate) sub_expressions: Vec<SubExponentExpression<'a>>,
+}
+
+impl<'a> GenerateBytecode for ExponentExpression<'a> {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
+        /* println!(
+            "Entered gen_bytecode for exponent_expression. Contents: {}",
+            self.position.contents
+        ); */
+        self.main_expression.gen_bytecode(bytecode, ast);
+        for sub_expr in self.sub_expressions.iter() {
+            sub_expr.gen_bytecode(bytecode, ast)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubExponentExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) expression: CallExpression<'a>,
+}
+
+impl<'a> GenerateBytecode for SubExponentExpression<'a> {
+    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
+        /* println!(
+            "Entered gen_bytecode for sub_exponent_expression. Contents: {}",
+            self.position.contents
+        ); */
+        self.expression.gen_bytecode(bytecode, ast);
+        bytecode.push_opcode(OpCodes::Exponent)
     }
 }
 
@@ -881,7 +918,7 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                         },
                     };
                     println!("Parsed statement: {}", statement.position.contents);
-                    children.push(BlockChild::Statement(statement));
+                    children.push(BlockChild::Statement(Box::new(statement)));
                 }
                 std::cmp::Ordering::Greater => {
                     let block = match Block::expect(ast) {
@@ -957,7 +994,29 @@ impl<'a> ExpectSelf<'a> for Statement<'a> {
                     }
                 }
             }
-
+            continue_!() => {
+                let first_token_index = ast.index;
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments();
+                match ast.current_token_type() {
+                    terminator!() => {
+                        return Ok(Statement {
+                            statement_type: StatementType::Continue,
+                            position: ast.create_position(
+                                first_token_index,
+                                ast.index - first_token_index + 1,
+                            ),
+                        });
+                    }
+                    _ => {
+                        return Err(ast.create_parse_error_with_message(
+                            ast.index,
+                            1,
+                            "Expected a terminator after continue keyword.".to_string(),
+                        ))
+                    }
+                }
+            }
             return_!() => {
                 let first_token_index = ast.index;
                 ast.index += 1;
@@ -1153,15 +1212,16 @@ impl<'a> ExpectSelf<'a> for Statement<'a> {
                     ast.index = last_valid_index;
                     None
                 };
-                let statement_type = StatementType::IfStatement(IfStatement {
+                let statement_type = StatementType::IfStatement(Box::new(IfStatement {
                     condition,
                     then_block,
                     elif_statements: elif_expressions,
                     else_statement: else_expression,
-                });
+                }));
                 return Ok(Statement {
                     statement_type,
-                    position: ast.create_position(first_token_index, ast.index - first_token_index + 1)
+                    position: ast
+                        .create_position(first_token_index, ast.index - first_token_index + 1),
                 });
             }
             while_!() => {
@@ -1205,13 +1265,12 @@ impl<'a> ExpectSelf<'a> for Statement<'a> {
                         _ => return Err(e),
                     },
                 };
-                let statement_type = StatementType::WhileStatement(WhileStatement {
-                    condition,
-                    body,
-                });
+                let statement_type =
+                    StatementType::WhileStatement(WhileStatement { condition, body });
                 return Ok(Statement {
                     statement_type,
-                    position: ast.create_position(first_token_index, ast.index - first_token_index + 1)
+                    position: ast
+                        .create_position(first_token_index, ast.index - first_token_index + 1),
                 });
             }
             identifier!() => {
@@ -1664,18 +1723,90 @@ impl<'a> ExpectSelf<'a> for FactorExpression<'a> {
                 })
             }
             _ => {
-                let call = CallExpression::expect(ast)?;
-                if ast.current_token_type() == eoi!() {
-                    ast.index -= 1;
-                }
+                let exponent = ExponentExpression::expect(ast)?;
 
                 Ok(FactorExpression {
-                    factor_type: FactorExpressionType::Call(Box::new(call)),
+                    factor_type: FactorExpressionType::Exponent(Box::new(exponent)),
                     position: ast
                         .create_position(first_token_index, ast.index - first_token_index + 1),
                 })
             }
         }
+    }
+}
+
+impl<'a> ExpectSelf<'a> for ExponentExpression<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+        ast.step_over_whitespace_and_block_comments();
+        let first_token_index = ast.index;
+        let mut call = CallExpression::expect(ast)?;
+        ast.index += 1;
+        let mut sub_exprs = vec![];
+        if ast.current_token_type() == eoi!() {
+            ast.index -= 1;
+            let position =
+                ast.create_position(first_token_index, ast.index - first_token_index + 1);
+
+            return Ok(ExponentExpression {
+                position,
+                main_expression: call,
+                sub_expressions: sub_exprs,
+            });
+        }
+        loop {
+            let sub_expr = match SubExponentExpression::expect(ast) {
+                Ok(v) => v,
+                Err(e) => match e {
+                    ParserError::WrongForm => {
+                        ast.index -= 1;
+                        break;
+                    }
+                    _ => return Err(e),
+                },
+            };
+            ast.index += 1;
+            sub_exprs.push(sub_expr);
+            if ast.current_token_type() == eoi!() {
+                ast.index -= 1;
+                let position =
+                    ast.create_position(first_token_index, ast.index - first_token_index + 1);
+
+                return Ok(ExponentExpression {
+                    position,
+                    main_expression: call,
+                    sub_expressions: sub_exprs,
+                });
+            }
+        }
+        Ok(ExponentExpression {
+            main_expression: call,
+            sub_expressions: sub_exprs,
+            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+        })
+    }
+}
+
+impl<'a> ExpectSelf<'a> for SubExponentExpression<'a> {
+    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+        ast.step_over_whitespace_and_block_comments();
+        let first_token_index = ast.index;
+        if ast.current_token_type() != exponent!() {
+            return Err(ParserError::WrongForm);
+        }
+        ast.index += 1;
+        ast.step_over_whitespace_and_block_comments();
+        let expr = match CallExpression::expect(ast) {
+            Ok(v) => v,
+            Err(e) => match e {
+                ParserError::WrongForm => return Err(ast.create_parse_error_with_message(ast.index, 1, "the exponent operators '**' must be followed by a valid call expression.".into())),
+                _ => return Err(e),
+            }
+        };
+
+        Ok(SubExponentExpression {
+            expression: expr,
+            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+        })
     }
 }
 

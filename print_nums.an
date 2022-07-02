@@ -1,16 +1,24 @@
 fibbonacci = fun(num)
-    if num < 2
+    if num == 0 or num == 1
         return 1
     
     return fibbonacci(num - 1) + fibbonacci(num - 2)
 
-main = fun() 
-    i = 0
-    while i < 30
-        println(fibbonacci(i))
-        i += 1
-            y = 1
-        println(y)
+factorial = fun(num)
+    if num == 0 or num == 1
+        return 1
+    
+    return num * factorial(num - 1)
 
+print_factorials = fun(limit)
+    num = 0
+    fact = 1
+    while num < limit
+        println('Factorial of ' + str(num) + ' is ' + str(fact))
+        num += 1
+        fact *= num
+
+main = fun() 
+    print_factorials(1000)
 
 main()

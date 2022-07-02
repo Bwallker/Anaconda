@@ -422,7 +422,6 @@ macro_rules! while_ {
 
 pub(crate) use while_;
 
-
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum ValueKeywordTokenType {
     Nothing,
@@ -466,14 +465,15 @@ pub(crate) enum OperatorTokenType {
     Arithmetic(ArithmeticOperatorTokenType),
     Comparison(ComparisonOperatorTokenType),
     Term(TermOperatorTokenType),
+    Exponent,
     // Structural.
-    Comma(CommaOperatorTokenType),
-    LParen(LParenOperatorTokenType),
-    RParen(RParenOperatorTokenType),
-    LSquare(LSquareOperatorTokenType),
-    RSquare(RSquareOperatorTokenType),
-    Terminator(TerminatorOperatorTokenType),
-    Colon(ColonOperatorTokenType),
+    Comma,
+    LParen,
+    RParen,
+    LSquare,
+    RSquare,
+    Terminator,
+    Colon,
 }
 impl TryFrom<TokenType> for OperatorTokenType {
     type Error = ();
@@ -506,6 +506,8 @@ pub(crate) enum AssignmentOperatorTokenType {
     BitwiseAndAssign,
     BitwiseOrAssign,
     BitwiseXorAssign,
+
+    ExponentAssign,
 }
 
 impl TryFrom<OperatorTokenType> for AssignmentOperatorTokenType {
@@ -640,6 +642,16 @@ macro_rules! bitwise_xor_assign {
 }
 
 pub(crate) use bitwise_xor_assign;
+
+macro_rules! exponent_assign {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
+            crate::lexer::lex::AssignmentOperatorTokenType::ExponentAssign,
+        ))
+    };
+}
+
+pub(crate) use exponent_assign;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum ArithmeticOperatorTokenType {
@@ -900,107 +912,65 @@ macro_rules! greater_than_equals {
 
 pub(crate) use greater_than_equals;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum LParenOperatorTokenType {
-    LParen,
+macro_rules! exponent {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Exponent)
+    };
 }
+
+pub(crate) use exponent;
 
 macro_rules! l_paren {
     () => {
-        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::LParen(
-            crate::lexer::lex::LParenOperatorTokenType::LParen,
-        ))
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::LParen)
     };
 }
 
 pub(crate) use l_paren;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum RParenOperatorTokenType {
-    RParen,
-}
-
 macro_rules! r_paren {
     () => {
-        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::RParen(
-            crate::lexer::lex::RParenOperatorTokenType::RParen,
-        ))
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::RParen)
     };
 }
 
 pub(crate) use r_paren;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum RSquareOperatorTokenType {
-    RSquare,
-}
-
 macro_rules! r_square {
     () => {
-        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::RSquare(
-            crate::lexer::lex::RSquareOperatorTokenType::RSquare,
-        ))
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::RSquare)
     };
 }
 
 pub(crate) use r_square;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum LSquareOperatorTokenType {
-    LSquare,
-}
-
 macro_rules! l_square {
     () => {
-        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::LSquare(
-            crate::lexer::lex::LSquareOperatorTokenType::LSquare,
-        ))
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::LSquare)
     };
 }
 
 pub(crate) use l_square;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum TerminatorOperatorTokenType {
-    Terminator,
-}
-
 macro_rules! terminator {
     () => {
-        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Terminator(
-            crate::lexer::lex::TerminatorOperatorTokenType::Terminator,
-        ))
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Terminator)
     };
 }
 
 pub(crate) use terminator;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum CommaOperatorTokenType {
-    Comma,
-}
-
 macro_rules! comma {
     () => {
-        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comma(
-            crate::lexer::lex::CommaOperatorTokenType::Comma,
-        ))
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Comma)
     };
 }
 
 pub(crate) use comma;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-
-pub(crate) enum ColonOperatorTokenType {
-    Colon,
-}
-
 macro_rules! colon {
     () => {
-        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Colon(
-            crate::lexer::lex::ColonOperatorTokenType::Colon,
-        ))
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Colon)
     };
 }
 
@@ -1760,7 +1730,8 @@ impl<'a> Lexer<'a> {
         tag("\r", terminator!()).boxed(),
         tag("\n", terminator!()).boxed(),
 
-
+        tag("**=", exponent_assign!()).boxed(),
+        
         tag("/=", slash_assign!()).boxed(),
         tag("*=", star_assign!()).boxed(),
         tag("%=", procent_assign!()).boxed(),
@@ -1780,6 +1751,8 @@ impl<'a> Lexer<'a> {
         tag("|=", bitwise_or_assign!()).boxed(),
         tag("^=", bitwise_xor_assign!()).boxed(),
         tag("=", assign!()).boxed(),
+
+            tag("**", exponent!()).boxed(),
 
         tag("<<", bitshift_left!()).boxed(),
         tag(">>", bitshift_right!()).boxed(),
@@ -1825,7 +1798,7 @@ impl<'a> Lexer<'a> {
 
         keyword("true", true_!()).boxed(),
         keyword("false", false_!()).boxed(),
-        keyword("nothing", nothing!()).boxed(),
+        keyword("Nothing", nothing!()).boxed(),
 
 
         IdentifierParser.boxed(),
