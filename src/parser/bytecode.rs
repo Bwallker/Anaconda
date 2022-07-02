@@ -264,7 +264,7 @@ impl OpCodes {
             OpCodes::BitshiftLeft => 1,
             OpCodes::BitshiftRight => 1,
             OpCodes::Exponent => 1,
-            
+
             OpCodes::LoadFalse => 1,
             OpCodes::LoadTrue => 1,
 
@@ -652,9 +652,10 @@ impl<'a> BytecodeInterpreter<'a> {
                     OpCodes::MultiplyAndAssign => assign_op!(*=),
                     OpCodes::DivideAndAssign => assign_op!(/=),
                     OpCodes::ModuloAndAssign => assign_op!(%=),
-                    /* These two don't matter because we handle them as special cases because IBig does not support <<= or >>= */
+                    /* These three don't matter because we handle them as special cases because IBig does not support <<=, >>= or **= */
                     OpCodes::BitshiftLeftAndAssign => assign_op!(!=),
                     OpCodes::BitshiftRightAndAssign => assign_op!(==),
+                    OpCodes::ExponentAndAssign  => assign_op!(>=),
                     /* END COMMENT */
                     OpCodes::BitwiseAndAndAssign => assign_op!(&=),
                     OpCodes::BitwiseOrAndAssign => assign_op!(|=),
