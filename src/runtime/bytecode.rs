@@ -4,14 +4,13 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display},
-    hash::BuildHasherDefault,
 };
 pub(crate) const USIZE_BYTES: usize = (usize::BITS / 8) as usize;
+use std::mem::replace;
 
-use super::ast::{Ast, Block, GenerateBytecode};
+use crate::{parser::ast::Block, util::FastMap};
 use ibig::{ibig, IBig};
 use std::hash::Hash;
-use twox_hash::XxHash64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Program<'a> {
@@ -19,12 +18,12 @@ pub(crate) struct Program<'a> {
     pub(crate) big_int_literals: ValueStore<IBig>,
     pub(crate) string_literals: ValueStore<&'a str>,
     pub(crate) identifier_literals: ValueStore<&'a str>,
-    pub(crate) function_definitions: ValueStore<Function>,
+    pub(crate) function_definitions: ValueStore<GcValue<Function>>,
 }
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) struct ValueStore<T: PartialEq + Eq + Hash + Debug + Clone> {
-    pub(crate) data: HashMap<usize, T, BuildHasherDefault<XxHash64>>,
-    pub(crate) reverse_data: HashMap<T, usize, BuildHasherDefault<XxHash64>>,
+    pub(crate) data: FastMap<usize, T>,
+    pub(crate) reverse_data: FastMap<T, usize>,
     pub(crate) index: usize,
 }
 
@@ -60,12 +59,11 @@ impl Display for Bytecode {
             let curr_opcode = self.instructions[pc];
             let curr_opcode = OpCodes::try_from(curr_opcode).unwrap();
             if curr_opcode.len() == 1 {
+                writeln!(f, "{pc}: {:#?}", curr_opcode)?;
                 pc += 1;
-                writeln!(f, "{:#?}", curr_opcode)?
             } else {
-                pc += 1;
-                writeln!(f, "{:#?} {}", curr_opcode, self.read_usize(pc))?;
-                pc += USIZE_BYTES;
+                writeln!(f, "{pc}: {:#?} {}", curr_opcode, self.read_usize(pc + 1))?;
+                pc += USIZE_BYTES + 1;
             }
         }
         Ok(())
@@ -108,15 +106,9 @@ impl Bytecode {
     }
 }
 
-pub(crate) fn generate_bytecode(ast: &mut Ast<'_>) -> Bytecode {
-    let mut res = Bytecode::new();
-    let block = ast.program.base_block.take().unwrap();
-    block.gen_bytecode(&mut res, ast);
-    // EndBlock opcode to offset the global scope we add when initializing our VM.
-    res.push_opcode(OpCodes::EndBlock);
-    res
-}
 use num_enum::TryFromPrimitive;
+
+use super::gc::{GarbageCollector, GcValue};
 // BYTECODE INSTRUCTIONS:
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, TryFromPrimitive, PartialEq, Eq)]
@@ -125,7 +117,7 @@ pub(crate) enum OpCodes {
     LoadBigIntLiteral,
     LoadStringLiteral,
     LoadVariableValueFromIndex,
-    LoadNothing,
+    LoadPoison,
     LoadFalse,
     LoadTrue,
 
@@ -137,6 +129,9 @@ pub(crate) enum OpCodes {
     Println,
 
     CallFunction,
+
+    CallMethod,
+
     Return,
     Pop,
     PrintStack,
@@ -147,6 +142,9 @@ pub(crate) enum OpCodes {
     EndOfFunctionDefinition,
     BeginBlock,
     EndBlock,
+
+    LoadTemp,
+    StoreTemp,
 
     Assign,
     AddAndAssign,
@@ -205,7 +203,12 @@ impl OpCodes {
             OpCodes::BreakIfFalse => 1,
             OpCodes::Continue => 1,
 
+            OpCodes::LoadTemp => 1,
+            OpCodes::StoreTemp => 1,
+
             OpCodes::CallFunction => 1 + USIZE_BYTES,
+            OpCodes::CallMethod => 1 + USIZE_BYTES,
+
             OpCodes::LoadBigIntLiteral => 1 + USIZE_BYTES,
             OpCodes::LoadSmallIntLiteral => 1 + USIZE_BYTES,
             OpCodes::LoadVariableValueFromIndex => 1 + USIZE_BYTES,
@@ -219,7 +222,7 @@ impl OpCodes {
             OpCodes::BeginBlock => 1,
             OpCodes::EndBlock => 1,
             OpCodes::LoadStringLiteral => 1 + USIZE_BYTES,
-            OpCodes::LoadNothing => 1,
+            OpCodes::LoadPoison => 1,
             OpCodes::Assign => 1 + USIZE_BYTES,
             OpCodes::AddAndAssign => 1 + USIZE_BYTES,
             OpCodes::SubAndAssign => 1 + USIZE_BYTES,
@@ -281,13 +284,22 @@ impl Display for OpCodes {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Scope<'a> {
-    variables: HashMap<usize, AnacondaValue<'a>, BuildHasherDefault<XxHash64>>,
+    pub(crate) variables: FastMap<usize, AnacondaValue<'a>>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StackFrame<'a> {
     Scope(Scope<'a>),
     Function(usize),
     Loop(LoopAddresses),
+}
+
+impl<'a> StackFrame<'a> {
+    fn as_scope(&self) -> &Scope<'a> {
+        match self {
+            StackFrame::Scope(scope) => scope,
+            _ => panic!("Not a scope"),
+        }
+    }
 }
 
 impl<'a> Scope<'a> {
@@ -308,14 +320,16 @@ pub(crate) struct BytecodeInterpreter<'a> {
     pub(crate) big_int_literals: ValueStore<IBig>,
     pub(crate) string_literals: ValueStore<&'a str>,
     pub(crate) identifier_literals: ValueStore<&'a str>,
-    pub(crate) function_definitions: ValueStore<Function>,
+    pub(crate) function_definitions: ValueStore<GcValue<Function>>,
     pub(crate) stack: Vec<AnacondaValue<'a>>,
     pub(crate) stack_frames: Vec<StackFrame<'a>>,
+    pub(crate) temp: AnacondaValue<'a>,
+    pub(crate) gc: GarbageCollector,
 }
 
 impl<'a> BytecodeInterpreter<'a> {
-    pub(crate) fn new(program: Program<'a>, bytecode: Bytecode) -> Self {
-        let mut this = Self {
+    pub(crate) fn new(program: Program<'a>, bytecode: Bytecode, gc: GarbageCollector) -> Box<Self> {
+        let mut this = Box::new(Self {
             big_int_literals: program.big_int_literals,
             string_literals: program.string_literals,
             identifier_literals: program.identifier_literals,
@@ -328,8 +342,11 @@ impl<'a> BytecodeInterpreter<'a> {
                 stack_frames.push(StackFrame::Scope(Scope::new()));
                 stack_frames
             },
-        };
-        this.add_builtins();
+            temp: AnacondaValue::Poison,
+            gc,
+        });
+        this.register_builtins();
+        this.register_types();
         this
     }
 
@@ -341,6 +358,7 @@ impl<'a> BytecodeInterpreter<'a> {
             params: vec![idx],
             start_index: meta_start_index,
         };
+        let meta = GcValue::new(meta, &mut self.gc);
         let def_idx = self.function_definitions.register_value(meta.clone());
         self.bytecode
             .push_opcode(OpCodes::StartOfFunctionDefinition);
@@ -368,6 +386,7 @@ impl<'a> BytecodeInterpreter<'a> {
             params: vec![idx],
             start_index: str_start_index,
         };
+        let str_ = GcValue::new(str_, &mut self.gc);
         let def_idx = self.function_definitions.register_value(str_.clone());
         self.bytecode
             .push_opcode(OpCodes::StartOfFunctionDefinition);
@@ -390,7 +409,7 @@ impl<'a> BytecodeInterpreter<'a> {
             _ => unreachable!(),
         }
     }
-    fn add_builtins(&mut self) {
+    fn register_builtins(&mut self) {
         macro_rules! register_print_fn {
             ($print_opcode: expr, $func_name: expr) => {
                 // + 5 because the function proper begins after the start function def opcode.
@@ -401,6 +420,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     params: vec![idx],
                     start_index: print_start_index,
                 };
+                let print = GcValue::new(print, &mut self.gc);
                 let def_idx = self.function_definitions.register_value(print.clone());
                 self.bytecode
                     .push_opcode(OpCodes::StartOfFunctionDefinition);
@@ -409,7 +429,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     .push_opcode(OpCodes::LoadVariableValueFromIndex);
                 self.bytecode.push_usize(idx);
                 self.bytecode.push_opcode($print_opcode);
-                self.bytecode.push_opcode(OpCodes::LoadNothing);
+                self.bytecode.push_opcode(OpCodes::LoadPoison);
                 self.bytecode.push_opcode(OpCodes::Return);
                 self.bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
                 self.bytecode.push_opcode(OpCodes::Pop);
@@ -430,6 +450,62 @@ impl<'a> BytecodeInterpreter<'a> {
         self.register_str();
     }
 
+    fn register_types(&mut self) {
+        let base_fields = {
+            let mut fields = HashMap::default();
+            let id = self.identifier_literals.reverse_data.get("str").unwrap();
+            fields.insert(
+                *id,
+                self.stack_frames[0]
+                    .as_scope()
+                    .variables
+                    .get(id)
+                    .unwrap()
+                    .clone(),
+            );
+
+            fields
+        };
+        let int = Type {
+            name: "integer",
+            fields: base_fields.clone(),
+        };
+        let str_ = Type {
+            name: "string",
+            fields: base_fields.clone(),
+        };
+        let bool_ = Type {
+            name: "boolean",
+            fields: base_fields.clone(),
+        };
+        let function = Type {
+            name: "function",
+            fields: base_fields.clone(),
+        };
+
+        match self.stack_frames[0] {
+            StackFrame::Scope(ref mut s) => {
+                s.variables.insert(
+                    self.identifier_literals.register_value("integer"),
+                    AnacondaValue::Type(GcValue::new(int, &mut self.gc)),
+                );
+                s.variables.insert(
+                    self.identifier_literals.register_value("string"),
+                    AnacondaValue::Type(GcValue::new(str_, &mut self.gc)),
+                );
+                s.variables.insert(
+                    self.identifier_literals.register_value("boolean"),
+                    AnacondaValue::Type(GcValue::new(bool_, &mut self.gc)),
+                );
+                s.variables.insert(
+                    self.identifier_literals.register_value("function"),
+                    AnacondaValue::Type(GcValue::new(function, &mut self.gc)),
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
+
     fn break_from_loop(&mut self) {
         while let Some(StackFrame::Scope(_)) = self.stack_frames.last() {
             self.stack_frames.pop().unwrap();
@@ -447,6 +523,15 @@ impl<'a> BytecodeInterpreter<'a> {
         //println!("{opcode:#?}");
         //println!("{:#?}", self.stack);
         match opcode {
+            OpCodes::LoadTemp => {
+                self.stack
+                    .push(std::mem::replace(&mut self.temp, AnacondaValue::Poison));
+                self.program_counter += 1;
+            }
+            OpCodes::StoreTemp => {
+                self.temp = self.stack.pop().unwrap();
+                self.program_counter += 1;
+            }
             OpCodes::ToString => {
                 let val = self.stack.pop().unwrap();
                 self.stack
@@ -501,22 +586,37 @@ impl<'a> BytecodeInterpreter<'a> {
                 self.stack_frames
                     .push(StackFrame::Function(self.program_counter));
                 self.stack_frames.push(StackFrame::Scope(Scope::new()));
-
-                let f = match self.stack.pop().unwrap() {
+                let last_elem_idx = self.stack.len() - 1;
+                let f = match replace(
+                    &mut self.stack[last_elem_idx - args_len],
+                    AnacondaValue::Poison,
+                ) {
                     AnacondaValue::Function(f) => f,
-                    invalid => panic!("{invalid:#?} is not a valid function"),
-                };
-                let idx_of_last = self.stack_frames.len() - 1;
-                match self.stack_frames[idx_of_last] {
-                    StackFrame::Scope(ref mut s) => {
-                        for i in (0..args_len).rev() {
-                            let idx_of_var = f.params[i];
-                            s.variables.insert(idx_of_var, self.stack.pop().unwrap());
-                        }
+                    _ => {
+                        println!("{:#?}", self.stack);
+
+                        panic!("Tried to call a non-function!")
                     }
-                    _ => unreachable!(),
-                }
-                self.program_counter = f.start_index;
+                };
+                f.with(|f| {
+                    let idx_of_last = self.stack_frames.len() - 1;
+                    match self.stack_frames[idx_of_last] {
+                        StackFrame::Scope(ref mut s) => {
+                            for i in (0..args_len).rev() {
+                                let idx_of_var = f.params[i];
+                                s.variables.insert(idx_of_var, self.stack.pop().unwrap());
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    self.stack.pop(); // pop the function
+
+                    self.program_counter = f.start_index;
+                });
+            }
+            OpCodes::CallMethod => {
+                todo!()
             }
             OpCodes::Pop => {
                 self.stack.pop();
@@ -545,8 +645,8 @@ impl<'a> BytecodeInterpreter<'a> {
                 println!("{to_print}");
                 self.program_counter += 1;
             }
-            OpCodes::LoadNothing => {
-                self.stack.push(AnacondaValue::Nothing);
+            OpCodes::LoadPoison => {
+                self.stack.push(AnacondaValue::Poison);
                 self.program_counter += 1;
             }
             OpCodes::LoadTrue => {
@@ -631,6 +731,9 @@ impl<'a> BytecodeInterpreter<'a> {
                                         panic!("Cannot perform operation {} on string.", stringify!($e))
                                     }
                                 },
+                                (_, AnacondaValue::Poison) => {
+                                    panic!("Cannot assign variable {} to poison!", self.identifier_literals.data.get(&idx).unwrap())
+                                }
                                 (other_1, other_2) => {
                                     if opcode == OpCodes::Assign {
                                         *other_1 = other_2;
@@ -655,7 +758,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     /* These three don't matter because we handle them as special cases because IBig does not support <<=, >>= or **= */
                     OpCodes::BitshiftLeftAndAssign => assign_op!(!=),
                     OpCodes::BitshiftRightAndAssign => assign_op!(==),
-                    OpCodes::ExponentAndAssign  => assign_op!(>=),
+                    OpCodes::ExponentAndAssign => assign_op!(>=),
                     /* END COMMENT */
                     OpCodes::BitwiseAndAndAssign => assign_op!(&=),
                     OpCodes::BitwiseOrAndAssign => assign_op!(|=),
@@ -1028,6 +1131,7 @@ impl<'a> BytecodeInterpreter<'a> {
         }
         println!("{:#?}", self.stack_frames);
         println!("{:#?}", self.stack);
+        self.gc.collect_garbage(&self.stack, &self.stack_frames);
     }
 
     fn get_var_by_index<'b>(&'b self, idx: usize) -> Option<&'b AnacondaValue<'a>> {
@@ -1055,37 +1159,58 @@ impl<'a> BytecodeInterpreter<'a> {
         }
         for sf in self.stack_frames.iter_mut().rev() {
             if let StackFrame::Scope(scope) = sf {
-                scope.variables.insert(idx, AnacondaValue::Nothing);
+                scope.variables.insert(idx, AnacondaValue::Poison);
                 return scope.variables.get_mut(&idx).unwrap();
             }
         }
         unreachable!()
     }
+
+    fn get_type_from_name(&self, name: &str) -> GcValue<Type<'a>> {
+        self.stack_frames[0]
+            .as_scope()
+            .variables
+            .get(self.identifier_literals.reverse_data.get(name).unwrap())
+            .unwrap()
+            .clone()
+            .as_type()
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Function {
     pub(crate) params: Vec<usize>,
     pub(crate) extra_args: bool,
     pub(crate) start_index: usize,
 }
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Type<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) fields: FastMap<usize, AnacondaValue<'a>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AnacondaValue<'a> {
     Int(IBig),
     String(Cow<'a, str>),
-    Function(Function),
+    Function(GcValue<Function>),
     Bool(bool),
-    Nothing,
+    Type(GcValue<Type<'a>>),
+    Poison,
 }
 
 impl<'a> Display for AnacondaValue<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AnacondaValue::Nothing => write!(f, "Nothing"),
+            AnacondaValue::Poison => panic!("Cannot display poison!"),
             AnacondaValue::String(s) => write!(f, "{s}"),
             AnacondaValue::Int(i) => write!(f, "{i}"),
-            AnacondaValue::Function(fun) => write!(f, "{:#?}", fun),
+            AnacondaValue::Function(fun_container) => {
+                fun_container.with(|fun| write!(f, "{:#?}", fun))
+            }
             AnacondaValue::Bool(b) => write!(f, "{b}"),
+            AnacondaValue::Type(t) => t.with(|v| write!(f, "type({})", v.name)),
         }
     }
 }
@@ -1094,10 +1219,46 @@ impl<'a> AnacondaValue<'a> {
     fn as_bool(&self) -> bool {
         match self {
             AnacondaValue::Int(i) => *i != ibig!(0),
-            AnacondaValue::Nothing => false,
-            AnacondaValue::Function(_) => panic!("Functions cannot be cast to booleans."),
+            AnacondaValue::Poison => panic!("Cannot cast poison to a bool!"),
+            AnacondaValue::Function(_) => true,
             AnacondaValue::String(s) => !s.is_empty(),
             AnacondaValue::Bool(b) => *b,
+            AnacondaValue::Type(_) => true,
         }
+    }
+
+    fn as_type(&self) -> GcValue<Type<'a>> {
+        match self {
+            AnacondaValue::Type(t) => t.clone(),
+            _ => panic!("{:#?} is not a type.", self),
+        }
+    }
+
+    fn get_type(&self, interpreter: &BytecodeInterpreter<'a>) -> GcValue<Type<'a>> {
+        match self {
+            AnacondaValue::Type(t) => t.clone(),
+            AnacondaValue::Int(_) => interpreter.get_type_from_name("integer"),
+            AnacondaValue::String(_) => interpreter.get_type_from_name("string"),
+            AnacondaValue::Bool(_) => interpreter.get_type_from_name("boolean"),
+            AnacondaValue::Poison => panic!("Cannot get type of poison!"),
+            AnacondaValue::Function(_) => interpreter.get_type_from_name("function"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{parser::parse, runtime::gc::GarbageCollector, generate_bytecode};
+
+    use super::BytecodeInterpreter;
+
+    #[test]
+    fn test_ub() -> Result<(), Box<dyn std::error::Error>> {
+        let mut ast = parse("main = fun()\r\n\tprintln('Hello, World!')\r\n")?;
+        let mut gc = GarbageCollector::new();
+        let bytecode = generate_bytecode(&mut ast, &mut gc);
+        let mut bytecode_interpreter = BytecodeInterpreter::new(ast.program, bytecode, gc);
+        bytecode_interpreter.interpret_bytecode();
+        Ok(())
     }
 }

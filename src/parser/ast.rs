@@ -1,14 +1,14 @@
-use super::bytecode::{Bytecode, Function, OpCodes, Program, ValueStore, USIZE_BYTES};
 use crate::lexer::lex::{
     and, assignment_operator_tt, bitshift_left, bitshift_right, bitwise_and, bitwise_or,
     bitwise_xor, break_, comma, comment_tt, continue_, docs_block_comment, elif, else_, eoi,
-    equals, false_, fun, greater_than, greater_than_equals, identifier, if_, int, l_paren,
-    less_than, less_than_equals, loop_, minus, normal_block_comment, not, not_equals, nothing, or,
+    equals, exponent, false_, fun, greater_than, greater_than_equals, identifier, if_, int,
+    l_paren, less_than, less_than_equals, loop_, minus, normal_block_comment, not, not_equals, or,
     percent, plus, r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt,
     while_, white_space, ArithmeticOperatorTokenType, AssignmentOperatorTokenType,
     BooleanComparisonKeywordTokenType, ComparisonOperatorTokenType, KeywordTokenType,
-    NotKeywordTokenType, TermOperatorTokenType, Token, TokenType, UnaryOperatorTokenType, exponent,
+    NotKeywordTokenType, TermOperatorTokenType, Token, TokenType, UnaryOperatorTokenType,
 };
+use crate::runtime::bytecode::{Program, ValueStore};
 use ibig::{ibig, IBig};
 use std::fmt::{Debug, Display};
 
@@ -27,15 +27,12 @@ pub(crate) struct Coordinate {
     pub(crate) column_number: usize,
 }
 
-pub(crate) trait GenerateBytecode {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>);
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Block<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) children: Vec<BlockChild<'a>>,
     pub(crate) indentation_level: usize,
+    pub(crate) last_statement_is_expression: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,43 +41,12 @@ pub(crate) enum BlockChild<'a> {
     Block(Block<'a>),
 }
 
-impl<'a> GenerateBytecode for Block<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for block. Contents: {}",
-            self.position.contents
-        ); */
-        bytecode.push_opcode(OpCodes::BeginBlock);
-        for child in &self.children {
-            child.gen_bytecode(bytecode, ast);
-        }
-        bytecode.push_opcode(OpCodes::EndBlock);
-    }
-}
-
-impl<'a> GenerateBytecode for BlockChild<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        match self {
-            BlockChild::Statement(statement) => statement.gen_bytecode(bytecode, ast),
-            BlockChild::Block(block) => block.gen_bytecode(bytecode, ast),
-        }
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Statement<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) statement_type: StatementType<'a>,
 }
 
-impl<'a> GenerateBytecode for Statement<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for statement. Contents: {}",
-            self.position.contents
-        ); */
-        self.statement_type.gen_bytecode(bytecode, ast);
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StatementType<'a> {
     Return(Option<Expression<'a>>),
@@ -88,27 +54,28 @@ pub(crate) enum StatementType<'a> {
     Break,
     Assignment(usize, AssignmentOperatorTokenType, Expression<'a>),
     Expr(Expression<'a>),
-    IfStatement(Box<IfStatement<'a>>),
+    IfStatement(Box<IfNode<'a>>),
     LoopStatement(LoopStatement<'a>),
     WhileStatement(WhileStatement<'a>),
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct IfStatement<'a> {
+pub(crate) struct IfNode<'a> {
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) condition: Expression<'a>,
     pub(crate) then_block: Block<'a>,
-    pub(crate) elif_statements: Vec<ElifExpression<'a>>,
-    pub(crate) else_statement: Option<ElseExpression<'a>>,
+    pub(crate) elif_nodes: Vec<ElifNode<'a>>,
+    pub(crate) else_nodes: Option<ElseNode<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ElifExpression<'a> {
+pub(crate) struct ElifNode<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) condition: Expression<'a>,
     pub(crate) then_block: Block<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ElseExpression<'a> {
+pub(crate) struct ElseNode<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) else_block: Block<'a>,
 }
@@ -124,127 +91,6 @@ pub(crate) struct WhileStatement<'a> {
     pub(crate) condition: Expression<'a>,
     pub(crate) body: Block<'a>,
 }
-impl<'a> GenerateBytecode for StatementType<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        match self {
-            Self::Expr(e) => {
-                e.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(OpCodes::Pop);
-            }
-            Self::Return(ret_val) => {
-                if let Some(v) = ret_val {
-                    v.gen_bytecode(bytecode, ast);
-                } else {
-                    bytecode.push_opcode(OpCodes::LoadNothing);
-                }
-                bytecode.push_opcode(OpCodes::EndBlock);
-                bytecode.push_opcode(OpCodes::Return);
-            }
-            Self::Break => {
-                bytecode.push_opcode(OpCodes::Break);
-            }
-            &Self::Continue => {
-                bytecode.push_opcode(OpCodes::Continue);
-            }
-            Self::Assignment(i, a, e) => {
-                let operator_opcode = match a {
-                    AssignmentOperatorTokenType::Assign => OpCodes::Assign,
-                    AssignmentOperatorTokenType::BitshiftLeftAssign => {
-                        OpCodes::BitshiftLeftAndAssign
-                    }
-
-                    AssignmentOperatorTokenType::BitshiftRightAssign => {
-                        OpCodes::BitshiftRightAndAssign
-                    }
-
-                    AssignmentOperatorTokenType::BitwiseAndAssign => OpCodes::BitwiseAndAndAssign,
-                    AssignmentOperatorTokenType::BitwiseOrAssign => OpCodes::BitwiseOrAndAssign,
-                    AssignmentOperatorTokenType::BitwiseXorAssign => OpCodes::BitwiseXorAndAssign,
-                    AssignmentOperatorTokenType::MinusAssign => OpCodes::SubAndAssign,
-                    AssignmentOperatorTokenType::PlusAssign => OpCodes::AddAndAssign,
-                    AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
-                    AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
-                    AssignmentOperatorTokenType::ProcentAssign => OpCodes::ModuloAndAssign,
-                    &AssignmentOperatorTokenType::ExponentAssign => OpCodes::ExponentAndAssign,
-                };
-                e.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(operator_opcode);
-                bytecode.push_usize(*i);
-            }
-            StatementType::IfStatement(i) => {
-                i.condition.gen_bytecode(bytecode, ast);
-
-                bytecode.push_opcode(OpCodes::IfFalseGoto);
-                let addr_of_if_goto = bytecode.instructions.len();
-                bytecode.push_usize(0);
-
-                i.then_block.gen_bytecode(bytecode, ast);
-
-                bytecode.push_opcode(OpCodes::Goto);
-                let addr_of_body_goto = bytecode.instructions.len();
-                bytecode.push_usize(0);
-
-                let first_elif_addr = bytecode.instructions.len();
-                let mut elif_exprs_end_addresses = Vec::with_capacity(i.elif_statements.len());
-                for elif_expr in i.elif_statements.iter() {
-                    elif_expr.condition.gen_bytecode(bytecode, ast);
-                    bytecode.push_opcode(OpCodes::IfFalseGoto);
-                    let addr_of_elif_goto = bytecode.instructions.len();
-                    bytecode.push_usize(0);
-                    elif_expr.then_block.gen_bytecode(bytecode, ast);
-                    bytecode.push_opcode(OpCodes::Goto);
-                    let addr_of_body_goto = bytecode.instructions.len();
-                    bytecode.push_usize(0);
-                    elif_exprs_end_addresses.push(addr_of_body_goto);
-                    bytecode.set_usize(addr_of_elif_goto, bytecode.instructions.len());
-                }
-                let addr_of_else_goto = bytecode.instructions.len();
-                if let Some(ref v) = i.else_statement {
-                    v.else_block.gen_bytecode(bytecode, ast);
-                }
-
-                let first_thing_after = bytecode.instructions.len();
-                bytecode.set_usize(
-                    addr_of_if_goto,
-                    if i.elif_statements.is_empty() {
-                        if i.else_statement.is_none() {
-                            first_thing_after
-                        } else {
-                            addr_of_else_goto
-                        }
-                    } else {
-                        first_elif_addr
-                    },
-                );
-
-                for addr in elif_exprs_end_addresses {
-                    bytecode.set_usize(addr, first_thing_after);
-                }
-                bytecode.set_usize(addr_of_body_goto, first_thing_after);
-            }
-            StatementType::LoopStatement(l) => {
-                bytecode.push_opcode(OpCodes::StartOfLoop);
-                let addr_of_loop_start = bytecode.instructions.len();
-                bytecode.push_usize(0);
-                l.body.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(OpCodes::Continue);
-                let end_addr = bytecode.instructions.len();
-                bytecode.set_usize(addr_of_loop_start, end_addr);
-            }
-            StatementType::WhileStatement(w) => {
-                bytecode.push_opcode(OpCodes::StartOfLoop);
-                let addr_of_loop_start = bytecode.instructions.len();
-                bytecode.push_usize(0);
-                w.condition.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(OpCodes::BreakIfFalse);
-                w.body.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(OpCodes::Continue);
-                let end_addr = bytecode.instructions.len();
-                bytecode.set_usize(addr_of_loop_start, end_addr);
-            }
-        }
-    }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct Identifier<'a> {
@@ -259,39 +105,11 @@ pub(crate) struct Expression<'a> {
     pub(crate) position: NodePositionData<'a>,
 }
 
-impl<'a> GenerateBytecode for Expression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.main_expression.gen_bytecode(bytecode, ast);
-        for sub_expr in self.sub_expressions.iter() {
-            sub_expr.gen_bytecode(bytecode, ast)
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubExpression<'a> {
     pub(crate) keyword: BooleanComparisonKeywordTokenType,
     pub(crate) expression: ComparisonExpression<'a>,
     pub(crate) position: NodePositionData<'a>,
-}
-
-impl<'a> GenerateBytecode for SubExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for sub_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.expression.gen_bytecode(bytecode, ast);
-        let opcode = match self.keyword {
-            BooleanComparisonKeywordTokenType::And => OpCodes::BooleanAnd,
-            BooleanComparisonKeywordTokenType::Or => OpCodes::BooleanOr,
-        };
-        bytecode.push_opcode(opcode);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -300,33 +118,10 @@ pub(crate) struct ComparisonExpression<'a> {
     pub(crate) comparison_type: ComparisonExpressionType<'a>,
 }
 
-impl<'a> GenerateBytecode for ComparisonExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for comparison_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.comparison_type.gen_bytecode(bytecode, ast)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub(crate) enum ComparisonExpressionType<'a> {
     Not(NotKeywordTokenType, Box<ComparisonExpression<'a>>),
     ComparisonChain(Box<ComparisonChainExpression<'a>>),
-}
-
-impl<'a> GenerateBytecode for ComparisonExpressionType<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        match self {
-            Self::ComparisonChain(chain) => chain.gen_bytecode(bytecode, ast),
-            Self::Not(_n, e) => {
-                e.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(OpCodes::BooleanNot)
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -336,39 +131,11 @@ pub(crate) struct ComparisonChainExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
 }
 
-impl<'a> GenerateBytecode for ComparisonChainExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        self.main_expression.gen_bytecode(bytecode, ast);
-        for sub_expr in self.sub_expressions.iter() {
-            sub_expr.gen_bytecode(bytecode, ast)
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubComparisonExpression<'a> {
     pub(crate) operator: ComparisonOperatorTokenType,
     pub(crate) expression: ArithmeticExpression<'a>,
     pub(crate) position: NodePositionData<'a>,
-}
-
-impl<'a> GenerateBytecode for SubComparisonExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for sub_comparison_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.expression.gen_bytecode(bytecode, ast);
-        let comparator = match self.operator {
-            ComparisonOperatorTokenType::Equals => OpCodes::Equals,
-            ComparisonOperatorTokenType::NotEquals => OpCodes::NotEquals,
-            ComparisonOperatorTokenType::LessThan => OpCodes::LessThan,
-            ComparisonOperatorTokenType::GreaterThan => OpCodes::GreaterThan,
-            ComparisonOperatorTokenType::LessThanEquals => OpCodes::LessThanEquals,
-            ComparisonOperatorTokenType::GreaterThanEquals => OpCodes::GreaterThanEquals,
-        };
-        bytecode.push_opcode(comparator);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -378,45 +145,11 @@ pub(crate) struct ArithmeticExpression<'a> {
     pub(crate) sub_expressions: Vec<SubArithmeticExpression<'a>>,
 }
 
-impl<'a> GenerateBytecode for ArithmeticExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for arithmetic_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.main_expression.gen_bytecode(bytecode, ast);
-        for sub_expr in self.sub_expressions.iter() {
-            sub_expr.gen_bytecode(bytecode, ast)
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubArithmeticExpression<'a> {
     pub(crate) operator: ArithmeticOperatorTokenType,
     pub(crate) expression: TermExpression<'a>,
     pub(crate) position: NodePositionData<'a>,
-}
-
-impl<'a> GenerateBytecode for SubArithmeticExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for sub_arithmetic_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.expression.gen_bytecode(bytecode, ast);
-        let arith_op = match self.operator {
-            ArithmeticOperatorTokenType::Unary(u) => match u {
-                UnaryOperatorTokenType::Minus => OpCodes::Sub,
-                UnaryOperatorTokenType::Plus => OpCodes::Add,
-                UnaryOperatorTokenType::BitwiseNot => unreachable!(),
-            },
-            ArithmeticOperatorTokenType::BitwiseAnd => OpCodes::BitwiseAnd,
-            ArithmeticOperatorTokenType::BitwiseOr => OpCodes::BitwiseOr,
-            ArithmeticOperatorTokenType::BitwiseXor => OpCodes::BitwiseXor,
-        };
-        bytecode.push_opcode(arith_op);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -426,40 +159,11 @@ pub(crate) struct TermExpression<'a> {
     pub(crate) sub_expressions: Vec<SubTermExpression<'a>>,
 }
 
-impl<'a> GenerateBytecode for TermExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for term_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.main_expression.gen_bytecode(bytecode, ast);
-        for sub_expr in self.sub_expressions.iter() {
-            sub_expr.gen_bytecode(bytecode, ast)
-        }
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubTermExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) operator: TermOperatorTokenType,
     pub(crate) expression: FactorExpression<'a>,
-}
-
-impl<'a> GenerateBytecode for SubTermExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for sub_term_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.expression.gen_bytecode(bytecode, ast);
-        bytecode.push_opcode(match self.operator {
-            TermOperatorTokenType::BitshiftLeft => OpCodes::BitshiftLeft,
-            TermOperatorTokenType::BitshiftRight => OpCodes::BitshiftRight,
-            TermOperatorTokenType::Slash => OpCodes::Divide,
-            TermOperatorTokenType::Star => OpCodes::Multiply,
-            TermOperatorTokenType::Percent => OpCodes::Modulo,
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -468,57 +172,17 @@ pub(crate) struct FactorExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
 }
 
-impl<'a> GenerateBytecode for FactorExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for factor_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.factor_type.gen_bytecode(bytecode, ast)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FactorExpressionType<'a> {
     UnaryFactor(UnaryOperatorTokenType, Box<FactorExpression<'a>>),
     Exponent(Box<ExponentExpression<'a>>),
 }
 
-impl<'a> GenerateBytecode for FactorExpressionType<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        match self {
-            Self::Exponent(exponent) => {
-                exponent.gen_bytecode(bytecode, ast);
-            }
-            Self::UnaryFactor(u, f) => {
-                f.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(match u {
-                    UnaryOperatorTokenType::BitwiseNot => OpCodes::BitwiseNot,
-                    UnaryOperatorTokenType::Plus => OpCodes::UnaryPlus,
-                    UnaryOperatorTokenType::Minus => OpCodes::UnaryMinus,
-                })
-            }
-        }
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExponentExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) main_expression: CallExpression<'a>,
     pub(crate) sub_expressions: Vec<SubExponentExpression<'a>>,
-}
-
-impl<'a> GenerateBytecode for ExponentExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for exponent_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.main_expression.gen_bytecode(bytecode, ast);
-        for sub_expr in self.sub_expressions.iter() {
-            sub_expr.gen_bytecode(bytecode, ast)
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -527,71 +191,21 @@ pub(crate) struct SubExponentExpression<'a> {
     pub(crate) expression: CallExpression<'a>,
 }
 
-impl<'a> GenerateBytecode for SubExponentExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for sub_exponent_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.expression.gen_bytecode(bytecode, ast);
-        bytecode.push_opcode(OpCodes::Exponent)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CallExpression<'a> {
     pub(crate) atom: AtomicExpression<'a>,
-    pub(crate) params: Option<Vec<Expression<'a>>>,
+    /// The params for this function calls and all the ones immediately following it.
+    /// For instance, consider this code: `foo(1, 2, 3)(4, 5, 6)`. Here we are calling two functions in a row. We parse this into our vec of vecs of params as [[1, 2, 3], [4, 5, 6]].
+    pub(crate) func_call_params: Option<Vec<Vec<Expression<'a>>>>,
     pub(crate) position: NodePositionData<'a>,
 }
 
-impl<'a> GenerateBytecode for CallExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for call_expression. Contents: {}",
-            self.position.contents
-        ); */
-
-        if let Some(ref params) = self.params {
-            for param in params.iter() {
-                param.gen_bytecode(bytecode, ast);
-            }
-            self.atom.gen_bytecode(bytecode, ast);
-            bytecode.push_opcode(OpCodes::CallFunction);
-            bytecode.push_usize(params.len());
-        } else {
-            self.atom.gen_bytecode(bytecode, ast);
-        }
-    }
-}
-/*
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Params<'a> {
-    lparen: LParenOperatorTokenType,
-    args: Vec<Param<'a>>,
-    rparen: RParenOperatorTokenType,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Param<'a> {
-    name: Identifier<'a>,
-}
-*/
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AtomicExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) atom_type: AtomicExpressionType<'a>,
 }
 
-impl<'a> GenerateBytecode for AtomicExpression<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        /* println!(
-            "Entered gen_bytecode for atomic_expression. Contents: {}",
-            self.position.contents
-        ); */
-        self.atom_type.gen_bytecode(bytecode, ast);
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Int {
     Big(usize),
@@ -603,79 +217,15 @@ pub(crate) enum AtomicExpressionType<'a> {
     Int(Int),
     Identifier(usize),
     String(usize),
-    Nothing,
     Bool(bool),
     ExpressionWithParentheses(Box<Expression<'a>>),
+    IfExpression(Box<IfNode<'a>>),
     List(ListExpression),
     Dict(DictExpression),
     For(ForExpression),
     FuncDef(FunctionDefinitionExpression<'a>),
 }
 
-impl<'a> GenerateBytecode for AtomicExpressionType<'a> {
-    fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>) {
-        match self {
-            Self::Int(i) => match i {
-                Int::Small(value) => {
-                    bytecode.push_opcode(OpCodes::LoadSmallIntLiteral);
-                    bytecode.push_usize(*value);
-                }
-                Int::Big(index) => {
-                    bytecode.push_opcode(OpCodes::LoadBigIntLiteral);
-                    bytecode.push_usize(*index);
-                }
-            },
-            Self::String(index) => {
-                bytecode.push_opcode(OpCodes::LoadStringLiteral);
-                bytecode.push_usize(*index);
-            }
-            Self::Identifier(index) => {
-                bytecode.push_opcode(OpCodes::LoadVariableValueFromIndex);
-                bytecode.push_usize(*index);
-            }
-            Self::Nothing => {
-                bytecode.push_opcode(OpCodes::LoadNothing);
-            }
-            Self::Bool(b) => {
-                if *b {
-                    bytecode.push_opcode(OpCodes::LoadTrue)
-                } else {
-                    bytecode.push_opcode(OpCodes::LoadFalse);
-                }
-            }
-            Self::ExpressionWithParentheses(e) => e.gen_bytecode(bytecode, ast),
-            &Self::FuncDef(ref f) => {
-                let function = Function {
-                    params: f
-                        .args
-                        .iter()
-                        .map(|arg| {
-                            *ast.program
-                                .identifier_literals
-                                .reverse_data
-                                .get(arg.id)
-                                .unwrap()
-                        })
-                        .collect(),
-                    extra_args: false,
-                    start_index: bytecode.instructions.len() + USIZE_BYTES + 1,
-                };
-                let idx = ast.program.function_definitions.register_value(function);
-                bytecode.push_opcode(OpCodes::StartOfFunctionDefinition);
-                bytecode.push_usize(idx);
-                f.body.gen_bytecode(bytecode, ast);
-                bytecode.push_opcode(OpCodes::LoadNothing);
-                bytecode.push_opcode(OpCodes::Return);
-                bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
-            }
-
-            unknown => {
-                println!("{:#?}", unknown);
-                todo!()
-            }
-        }
-    }
-}
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct ListExpression;
 
@@ -741,8 +291,8 @@ impl<'a> Ast<'a> {
         self.tokens[self.index]
     }
 
-    fn current_indentation(&self) -> usize {
-        self.current_token().indentation
+    fn current_column_number(&self) -> usize {
+        self.current_token().start.column_number
     }
 
     fn current_token_type(&self) -> TokenType {
@@ -878,30 +428,35 @@ fn parse_int(contents: &str) -> IBig {
 
 pub(crate) type ParserResult<'a, T> = Result<T, ParserError<'a>>;
 
-trait ExpectSelf<'a>: Sized {
+trait ExpectSelf<'a, T = ()>: Sized {
     fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self>;
+    #[allow(unused_variables)]
+    fn expect_with_extra_args(ast: &mut Ast<'a>, extra_args: T) -> ParserResult<'a, Self> {
+        Self::expect(ast)
+    }
 }
 
-impl<'a> ExpectSelf<'a> for Block<'a> {
+impl<'a> ExpectSelf<'a, bool> for Block<'a> {
     fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
-        println!(
-            "Entered expect block with token: {}",
-            ast.current_token().contents
-        );
-        let indentation_level_for_this_block = ast.current_indentation();
+        Self::expect_with_extra_args(ast, false)
+    }
+    fn expect_with_extra_args(
+        ast: &mut Ast<'a>,
+        last_statement_is_expression: bool,
+    ) -> ParserResult<'a, Self> {
         let first_token_index = ast.index;
         ast.step_over_whitespace_and_block_comments();
-
+        let indentation_level_for_this_block = ast.current_column_number();
         let mut children = Vec::new();
         loop {
             ast.step_over_whitespace_and_comments_and_terminators();
             if ast.current_token().token_type == eoi!() {
                 break;
             }
-            match ast
-                .current_indentation()
-                .cmp(&indentation_level_for_this_block)
-            {
+            let cmp = ast
+                .current_column_number()
+                .cmp(&indentation_level_for_this_block);
+            match cmp {
                 std::cmp::Ordering::Less => {
                     ast.index -= 1;
                     break;
@@ -917,11 +472,10 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                             _ => return Err(error),
                         },
                     };
-                    println!("Parsed statement: {}", statement.position.contents);
                     children.push(BlockChild::Statement(Box::new(statement)));
                 }
                 std::cmp::Ordering::Greater => {
-                    let block = match Block::expect(ast) {
+                    let block = match Block::expect_with_extra_args(ast, false) {
                         Ok(block) => block,
                         Err(error) => match error {
                             ParserError::WrongForm => {
@@ -932,7 +486,6 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                             _ => return Err(error),
                         },
                     };
-                    println!("Parsed block: {}", block.position.contents);
                     children.push(BlockChild::Block(block));
                 }
             }
@@ -946,27 +499,197 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
             return Err(ParserError::WrongForm);
         }
         let number_of_tokens_used = ast.index - first_token_index + 1;
+
         let b = Block {
             position: ast.create_position(first_token_index, number_of_tokens_used),
             indentation_level: indentation_level_for_this_block,
             children,
+            last_statement_is_expression,
         };
-        println!("Created block with contents: {}", b.position.contents);
-        println!("END_BLOCK");
+        match b.children.last() {
+            None => (),
+            Some(ref v) => {
+                match v {
+                    &BlockChild::Block(_) => (),
+                    BlockChild::Statement(s) => {
+                        if b.last_statement_is_expression {
+                            match s.statement_type {
+                                StatementType::Expr(_) => (),
+                                _ => return Err(ast.create_parse_error_with_message(
+                                    s.position.index,
+                                    s.position.len,
+                                    "Blocks that return expressions must end with an expression."
+                                        .into(),
+                                )),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(b)
     }
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IfNodeType {
+    Expression,
+    Statement,
+}
 
-impl<'a> ExpectSelf<'a> for Statement<'a> {
+fn expect_if_node<'a>(ast: &mut Ast<'a>, type_: IfNodeType) -> ParserResult<'a, IfNode<'a>> {
+    let last_statement_is_expression = type_ == IfNodeType::Expression;
+    match ast.current_token_type() {
+        if_!() => {
+            let first_token_index = ast.index;
+            ast.index += 1;
+            ast.step_over_whitespace_and_block_comments();
+            let condition = match Expression::expect(ast) {
+                Ok(v) => v,
+                Err(e) => match e {
+                    ParserError::WrongForm => {
+                        return Err(ast.create_parse_error_with_message(
+                            first_token_index,
+                            ast.index - first_token_index + 1,
+                            "Expected an expression after 'if' keyword".into(),
+                        ))
+                    }
+                    _ => return Err(e),
+                },
+            };
+            ast.index += 1;
+            ast.step_over_whitespace_and_comments();
+            if ast.current_token().token_type != terminator!() {
+                return Err(ast.create_parse_error_with_message(
+                    ast.index,
+                    1,
+                    "Expected a terminator after 'if' condition".into(),
+                ));
+            }
+            ast.index += 1;
+            ast.step_over_whitespace_and_comments_and_terminators();
+            let then_block = match Block::expect_with_extra_args(ast, last_statement_is_expression)
+            {
+                Ok(v) => v,
+                Err(e) => match e {
+                    ParserError::WrongForm => {
+                        return Err(ast.create_parse_error_with_message(
+                            first_token_index,
+                            ast.index - first_token_index + 1,
+                            "Expected an indented block after 'if' condition".into(),
+                        ))
+                    }
+                    _ => return Err(e),
+                },
+            };
+            let mut last_valid_index = ast.index;
+            ast.index += 1;
+            let mut elif_expressions = vec![];
+            ast.step_over_whitespace_and_comments_and_terminators();
+            while ast.current_token_type() == elif!() {
+                let first_token_index = ast.index;
+                ast.index += 1;
+                ast.step_over_whitespace_and_block_comments();
+                let condition = match Expression::expect(ast) {
+                    Ok(v) => v,
+                    Err(e) => match e {
+                        ParserError::WrongForm => {
+                            return Err(ast.create_parse_error_with_message(
+                                first_token_index,
+                                ast.index - first_token_index + 1,
+                                "Expected an expression after 'elif' keyword".into(),
+                            ))
+                        }
+                        _ => return Err(e),
+                    },
+                };
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments();
+                if ast.current_token().token_type != terminator!() {
+                    return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "Expected a terminator after 'elif' condition".into(),
+                    ));
+                }
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments_and_terminators();
+                let then_block =
+                    match Block::expect_with_extra_args(ast, last_statement_is_expression) {
+                        Ok(v) => v,
+                        Err(e) => match e {
+                            ParserError::WrongForm => {
+                                return Err(ast.create_parse_error_with_message(
+                                    first_token_index,
+                                    ast.index - first_token_index + 1,
+                                    "Expected an indented block after 'elif' condition".into(),
+                                ))
+                            }
+                            _ => return Err(e),
+                        },
+                    };
+                elif_expressions.push(ElifNode {
+                    position: ast
+                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    then_block,
+                    condition,
+                });
+                last_valid_index = ast.index;
+                ast.index += 1;
+                ast.step_over_whitespace_and_comments_and_terminators();
+            }
+            let else_expression = if ast.current_token_type() == else_!() {
+                let first_token_index = ast.index;
+                ast.index += 1;
+                ast.step_over_whitespace_and_block_comments();
+                let else_block =
+                    match Block::expect_with_extra_args(ast, last_statement_is_expression) {
+                        Ok(v) => v,
+                        Err(e) => match e {
+                            ParserError::WrongForm => {
+                                return Err(ast.create_parse_error_with_message(
+                                    first_token_index,
+                                    ast.index - first_token_index + 1,
+                                    "Expected an indented block after 'else' keyword".into(),
+                                ))
+                            }
+                            _ => return Err(e),
+                        },
+                    };
+                Some(ElseNode {
+                    position: ast
+                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    else_block,
+                })
+            } else {
+                ast.index = last_valid_index;
+                if last_statement_is_expression {
+                    return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "If expressions must include an else case.".into(),
+                    ));
+                }
+                None
+            };
+            Ok(IfNode {
+                condition,
+                then_block,
+                elif_nodes: elif_expressions,
+                else_nodes: else_expression,
+                position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            })
+        }
+        _ => Err(ParserError::WrongForm),
+    }
+}
+
+impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
     fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
-        println!(
-            "Current token at start of expect_statement: {}",
-            ast.current_token().contents
-        );
-        let indent_at_start = ast.current_indentation();
+        let indent_at_start = ast.current_column_number();
         ast.step_over_whitespace_and_comments_and_terminators();
         let index_before_statement = ast.index;
-        if ast.current_indentation() != indent_at_start {
+        if ast.current_column_number() < indent_at_start {
             ast.index = index_before_statement;
             return Err(ParserError::WrongForm);
         }
@@ -1055,6 +778,16 @@ impl<'a> ExpectSelf<'a> for Statement<'a> {
                     },
                 }
             }
+            if_!() => match expect_if_node(ast, IfNodeType::Statement) {
+                Ok(i) => Ok(Statement {
+                    statement_type: StatementType::IfStatement(Box::new(i)),
+                    position: ast.create_position(
+                        index_before_statement,
+                        ast.index - index_before_statement + 1,
+                    ),
+                }),
+                Err(e) => Err(e),
+            },
             loop_!() => {
                 let first_token_index = ast.index;
                 ast.index += 1;
@@ -1088,140 +821,6 @@ impl<'a> ExpectSelf<'a> for Statement<'a> {
                         body,
                     }),
                     position: pos,
-                });
-            }
-            if_!() => {
-                let first_token_index = ast.index;
-                ast.index += 1;
-                ast.step_over_whitespace_and_block_comments();
-                let condition = match Expression::expect(ast) {
-                    Ok(v) => v,
-                    Err(e) => match e {
-                        ParserError::WrongForm => {
-                            return Err(ast.create_parse_error_with_message(
-                                first_token_index,
-                                ast.index - first_token_index + 1,
-                                "Expected an expression after 'if' keyword".into(),
-                            ))
-                        }
-                        _ => return Err(e),
-                    },
-                };
-                ast.index += 1;
-                ast.step_over_whitespace_and_comments();
-                if ast.current_token().token_type != terminator!() {
-                    return Err(ast.create_parse_error_with_message(
-                        ast.index,
-                        1,
-                        "Expected a terminator after 'if' condition".into(),
-                    ));
-                }
-                ast.index += 1;
-                ast.step_over_whitespace_and_comments_and_terminators();
-                let then_block = match Block::expect(ast) {
-                    Ok(v) => v,
-                    Err(e) => match e {
-                        ParserError::WrongForm => {
-                            return Err(ast.create_parse_error_with_message(
-                                first_token_index,
-                                ast.index - first_token_index + 1,
-                                "Expected an indented block after 'if' condition".into(),
-                            ))
-                        }
-                        _ => return Err(e),
-                    },
-                };
-                let mut last_valid_index = ast.index;
-                ast.index += 1;
-                let mut elif_expressions = vec![];
-                ast.step_over_whitespace_and_comments_and_terminators();
-                while ast.current_token_type() == elif!() {
-                    let first_token_index = ast.index;
-                    ast.index += 1;
-                    ast.step_over_whitespace_and_block_comments();
-                    let condition = match Expression::expect(ast) {
-                        Ok(v) => v,
-                        Err(e) => match e {
-                            ParserError::WrongForm => {
-                                return Err(ast.create_parse_error_with_message(
-                                    first_token_index,
-                                    ast.index - first_token_index + 1,
-                                    "Expected an expression after 'elif' keyword".into(),
-                                ))
-                            }
-                            _ => return Err(e),
-                        },
-                    };
-                    ast.index += 1;
-                    ast.step_over_whitespace_and_comments();
-                    if ast.current_token().token_type != terminator!() {
-                        return Err(ast.create_parse_error_with_message(
-                            ast.index,
-                            1,
-                            "Expected a terminator after 'elif' condition".into(),
-                        ));
-                    }
-                    ast.index += 1;
-                    ast.step_over_whitespace_and_comments_and_terminators();
-                    let then_block = match Block::expect(ast) {
-                        Ok(v) => v,
-                        Err(e) => match e {
-                            ParserError::WrongForm => {
-                                return Err(ast.create_parse_error_with_message(
-                                    first_token_index,
-                                    ast.index - first_token_index + 1,
-                                    "Expected an indented block after 'elif' condition".into(),
-                                ))
-                            }
-                            _ => return Err(e),
-                        },
-                    };
-                    elif_expressions.push(ElifExpression {
-                        position: ast
-                            .create_position(first_token_index, ast.index - first_token_index + 1),
-                        then_block,
-                        condition,
-                    });
-                    last_valid_index = ast.index;
-                    ast.index += 1;
-                    ast.step_over_whitespace_and_comments_and_terminators();
-                }
-                let else_expression = if ast.current_token_type() == else_!() {
-                    let first_token_index = ast.index;
-                    ast.index += 1;
-                    ast.step_over_whitespace_and_block_comments();
-                    let else_block = match Block::expect(ast) {
-                        Ok(v) => v,
-                        Err(e) => match e {
-                            ParserError::WrongForm => {
-                                return Err(ast.create_parse_error_with_message(
-                                    first_token_index,
-                                    ast.index - first_token_index + 1,
-                                    "Expected an indented block after 'else' keyword".into(),
-                                ))
-                            }
-                            _ => return Err(e),
-                        },
-                    };
-                    Some(ElseExpression {
-                        position: ast
-                            .create_position(first_token_index, ast.index - first_token_index + 1),
-                        else_block,
-                    })
-                } else {
-                    ast.index = last_valid_index;
-                    None
-                };
-                let statement_type = StatementType::IfStatement(Box::new(IfStatement {
-                    condition,
-                    then_block,
-                    elif_statements: elif_expressions,
-                    else_statement: else_expression,
-                }));
-                return Ok(Statement {
-                    statement_type,
-                    position: ast
-                        .create_position(first_token_index, ast.index - first_token_index + 1),
                 });
             }
             while_!() => {
@@ -1739,7 +1338,7 @@ impl<'a> ExpectSelf<'a> for ExponentExpression<'a> {
     fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
-        let mut call = CallExpression::expect(ast)?;
+        let call = CallExpression::expect(ast)?;
         ast.index += 1;
         let mut sub_exprs = vec![];
         if ast.current_token_type() == eoi!() {
@@ -1795,13 +1394,19 @@ impl<'a> ExpectSelf<'a> for SubExponentExpression<'a> {
         }
         ast.index += 1;
         ast.step_over_whitespace_and_block_comments();
-        let expr = match CallExpression::expect(ast) {
-            Ok(v) => v,
-            Err(e) => match e {
-                ParserError::WrongForm => return Err(ast.create_parse_error_with_message(ast.index, 1, "the exponent operators '**' must be followed by a valid call expression.".into())),
-                _ => return Err(e),
-            }
-        };
+        let expr =
+            match CallExpression::expect(ast) {
+                Ok(v) => v,
+                Err(e) => match e {
+                    ParserError::WrongForm => return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "the exponent operators '**' must be followed by a valid call expression."
+                            .into(),
+                    )),
+                    _ => return Err(e),
+                },
+            };
 
         Ok(SubExponentExpression {
             expression: expr,
@@ -1824,11 +1429,16 @@ impl<'a> ExpectSelf<'a> for CallExpression<'a> {
 
             return Ok(CallExpression {
                 atom,
-                params,
+                func_call_params: params,
                 position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
             });
         }
         if ast.current_token().token_type == l_paren!() {
+            params = Some(vec![]);
+        } else {
+            ast.index = index_after_atom;
+        }
+        while ast.current_token().token_type == l_paren!() {
             ast.index += 1;
             let mut args = vec![];
             match Expression::expect(ast) {
@@ -1879,19 +1489,22 @@ impl<'a> ExpectSelf<'a> for CallExpression<'a> {
                     ),
                 ));
             }
-            params = Some(args);
-        } else {
-            ast.index = index_after_atom;
+            if let Some(ref mut v) = params {
+                v.push(args);
+            }
+            let index_after_params = ast.index;
+            ast.index += 1;
+            ast.step_over_whitespace_and_block_comments();
+            if ast.current_token_type() != l_paren!() {
+                ast.index = index_after_params;
+                break;
+            }
         }
         let position = ast.create_position(first_token_index, ast.index - first_token_index + 1);
-        println!(
-            "Parsed call_expression with contents: {}",
-            position.contents
-        );
         Ok(CallExpression {
             position,
             atom,
-            params,
+            func_call_params: params,
         })
     }
 }
@@ -1930,7 +1543,6 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
             true_!() | false_!() => {
                 AtomicExpressionType::Bool(ast.current_token().token_type == true_!())
             }
-            nothing!() => AtomicExpressionType::Nothing,
             l_paren!() => {
                 let first_token_index = ast.index;
                 ast.index += 1;
@@ -2021,6 +1633,11 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 };
                 AtomicExpressionType::FuncDef(FunctionDefinitionExpression { args, body })
             }
+            if_!() => {
+                let if_node = expect_if_node(ast, IfNodeType::Expression)?;
+                AtomicExpressionType::IfExpression(Box::new(if_node))
+            }
+
             terminator!() | r_paren!() => return Err(ParserError::WrongForm),
             x => {
                 println!("{x:#?}");

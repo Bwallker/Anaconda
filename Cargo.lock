@@ -25,6 +25,7 @@ dependencies = [
  "color-eyre",
  "counted-array",
  "ibig",
+ "impls",
  "lazy_static 1.4.0",
  "num_enum",
  "pretty_assertions",
@@ -241,6 +242,12 @@ dependencies = [
  "rand",
  "static_assertions",
 ]
+
+[[package]]
+name = "impls"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a46645bbd70538861a90d0f26c31537cdf1e44aae99a794fb75a664b70951bc"
 
 [[package]]
 name = "indenter"

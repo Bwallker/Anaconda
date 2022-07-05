@@ -1,5 +1,21 @@
-f = fun(x)
-    return fun(y)
-        return x + y
+x = 1
+y = 10
+z = 3
+v = 4
 
-print((f(1))(1))
+biggest =   if x > y and x > z and x > v
+                x
+            elif y > x and y > z and y > v
+                y
+            elif z > x and z > y and z > v
+                z
+            else
+                v
+
+my_fun = fun(x) 
+    println(x)
+    return fun(y)
+        println(y)
+
+println(biggest)
+my_fun(1)(2)

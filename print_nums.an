@@ -19,6 +19,9 @@ print_factorials = fun(limit)
         fact *= num
 
 main = fun() 
-    print_factorials(1000)
+    count = 0
+    while count < 30
+        println(factorial(count))
+        count += 1
 
 main()

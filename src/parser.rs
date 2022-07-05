@@ -1,10 +1,8 @@
 use crate::lexer::lex::{Lexer, Token};
-mod ast;
+pub(crate) mod ast;
 use ast::Ast;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-
-pub(crate) mod bytecode;
 
 pub(crate) fn parse<'a>(program: &'a str) -> Result<Ast<'a>> {
     let mut lexer = Lexer::new(program);

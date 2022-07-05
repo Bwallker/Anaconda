@@ -1,47 +1,8 @@
+#![allow(unused_macros, unused_imports)]
+
 use counted_array::counted_array;
 use lazy_static::lazy_static;
 use std::fmt::{Display, Formatter};
-use std::iter::Peekable;
-struct RemoveLast<I: Iterator<Item = T>, T> {
-    iter: Peekable<I>,
-}
-
-impl<I: Iterator<Item = T>, T> Iterator for RemoveLast<I, T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.iter.next();
-        if self.iter.peek().is_none() {
-            None
-        } else {
-            next
-        }
-    }
-}
-
-trait CharAtIndex {
-    fn char_at_index(&self, index: usize) -> Option<char>;
-}
-
-impl<T: AsRef<str>> CharAtIndex for T {
-    /// Returns the first char in the string.
-    fn char_at_index(&self, index: usize) -> Option<char> {
-        let this = self.as_ref();
-        this.get(index..).and_then(|x| x.chars().next())
-    }
-}
-
-trait RemoveLastTrait<I: Iterator<Item = T>, T> {
-    fn remove_last(self) -> RemoveLast<I, T>;
-}
-
-impl<I: Iterator<Item = T>, T> RemoveLastTrait<I, T> for I {
-    fn remove_last(self) -> RemoveLast<I, T> {
-        RemoveLast {
-            iter: self.peekable(),
-        }
-    }
-}
 macro_rules! hex_pattern {
     () => {
         b'_' | b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F'
@@ -424,20 +385,9 @@ pub(crate) use while_;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum ValueKeywordTokenType {
-    Nothing,
     False,
     True,
 }
-
-macro_rules! nothing {
-    () => {
-        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Value(
-            crate::lexer::lex::ValueKeywordTokenType::Nothing,
-        ))
-    };
-}
-
-pub(crate) use nothing;
 
 macro_rules! false_ {
     () => {
@@ -474,6 +424,7 @@ pub(crate) enum OperatorTokenType {
     RSquare,
     Terminator,
     Colon,
+    Dot,
 }
 impl TryFrom<TokenType> for OperatorTokenType {
     type Error = ();
@@ -976,6 +927,16 @@ macro_rules! colon {
 
 pub(crate) use colon;
 
+macro_rules! dot {
+    () => {
+        crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Dot)
+    };
+}
+
+pub(crate) use dot;
+
+use crate::util::{CharAtIndex, RemoveLastTrait};
+
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) struct Position {
     pub(crate) line_number: LineNumber,
@@ -990,7 +951,6 @@ pub(crate) struct Token<'a> {
     pub(crate) len: usize,
     pub(crate) end: Position,
     pub(crate) token_type: TokenType,
-    pub(crate) indentation: usize,
 }
 
 type LineNumber = usize;
@@ -1589,7 +1549,6 @@ impl<'a> Lexer<'a> {
         let index = self.index;
         let column_number = self.column_number;
         let line_number = self.line_number;
-        let indentation = self.calculate_indentation();
 
         let end = self.calculate_offset(len);
         let contents = if end.index < self.input.len() {
@@ -1605,7 +1564,6 @@ impl<'a> Lexer<'a> {
                 column_number,
                 line_number,
             },
-            indentation,
             end,
             contents,
         }
@@ -1693,22 +1651,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn calculate_indentation(&self) -> usize {
-        let mut indent = 0;
-
-        let first_byte_in_column = self.index - self.column_number;
-        let mut idx = first_byte_in_column;
-        while self.input.get(idx..=idx).is_some()
-            && matches!(
-                self.input.as_bytes().get(idx).unwrap(),
-                whitespace_pattern!()
-            )
-        {
-            idx += 1;
-            indent += 1;
-        }
-        indent
-    }
     pub(crate) fn yield_token(&mut self) -> LexerResult<'a, Token<'a>> {
         counted_array!(lazy_static PARSERS: [Box<dyn Parser>; _] = [
         EOIParser.boxed(),
@@ -1721,7 +1663,8 @@ impl<'a> Lexer<'a> {
 
         LineCommentParser {prefix: "///", return_type: docs_line_comment!()}.boxed(),
         LineCommentParser {prefix: "//", return_type: normal_line_comment!()}.boxed(),
-
+        tag("/***/", docs_block_comment!()).boxed(),
+        tag("/**/", normal_block_comment!()).boxed(),
         BlockCommentParser {prefix: "/**", return_type: docs_block_comment!()}.boxed(),
         BlockCommentParser {prefix : "/*", return_type: normal_block_comment!()}.boxed(),
 
@@ -1731,7 +1674,7 @@ impl<'a> Lexer<'a> {
         tag("\n", terminator!()).boxed(),
 
         tag("**=", exponent_assign!()).boxed(),
-        
+
         tag("/=", slash_assign!()).boxed(),
         tag("*=", star_assign!()).boxed(),
         tag("%=", procent_assign!()).boxed(),
@@ -1778,7 +1721,7 @@ impl<'a> Lexer<'a> {
         tag("-", minus!()).boxed(),
 
         tag(":", colon!()).boxed(),
-
+        tag(".", dot!()).boxed(),
 
 
         WhitespaceParser.boxed(),
@@ -1798,7 +1741,6 @@ impl<'a> Lexer<'a> {
 
         keyword("true", true_!()).boxed(),
         keyword("false", false_!()).boxed(),
-        keyword("Nothing", nothing!()).boxed(),
 
 
         IdentifierParser.boxed(),
@@ -1872,7 +1814,6 @@ mod tests {
                         index: 0,
                     },
                     contents: "2",
-                    indentation: 0,
                 },
                 Token {
                     token_type: white_space!(),
@@ -1888,7 +1829,6 @@ mod tests {
                         index: 1,
                     },
                     contents: " ",
-                    indentation: 0,
                 },
                 Token {
                     token_type: not_equals!(),
@@ -1904,7 +1844,6 @@ mod tests {
                         index: 3,
                     },
                     contents: "!=",
-                    indentation: 0,
                 },
                 Token {
                     token_type: white_space!(),
@@ -1920,7 +1859,6 @@ mod tests {
                         index: 4,
                     },
                     contents: " ",
-                    indentation: 0,
                 },
                 Token {
                     token_type: int!(),
@@ -1936,7 +1874,6 @@ mod tests {
                         index: 5,
                     },
                     contents: "3",
-                    indentation: 0,
                 },
                 Token {
                     token_type: eoi!(),
@@ -1952,7 +1889,6 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
-                    indentation: 0,
                 } //Token::Int("2"),
                   //Token::Whitespace(" "),
                   //Token::NotEquals,
@@ -2009,7 +1945,6 @@ mod tests {
                         index: 0,
                     },
                     contents: "1",
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2025,7 +1960,6 @@ mod tests {
                         index: 2,
                     },
                     contents: "\r\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: int!(),
@@ -2041,7 +1975,6 @@ mod tests {
                         index: 3,
                     },
                     contents: "2",
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2057,7 +1990,6 @@ mod tests {
                         index: 5,
                     },
                     contents: "\r\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: int!(),
@@ -2073,7 +2005,6 @@ mod tests {
                         index: 6,
                     },
                     contents: "3",
-                    indentation: 0,
                 },
                 Token {
                     token_type: eoi!(),
@@ -2089,7 +2020,6 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
-                    indentation: 0,
                 }
             ]
         );
@@ -2114,7 +2044,6 @@ mod tests {
                         index: 0,
                     },
                     contents: "1",
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2130,7 +2059,6 @@ mod tests {
                         index: 1,
                     },
                     contents: "\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: int!(),
@@ -2146,7 +2074,6 @@ mod tests {
                         index: 2,
                     },
                     contents: "2",
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2162,7 +2089,6 @@ mod tests {
                         index: 3,
                     },
                     contents: "\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: int!(),
@@ -2178,7 +2104,6 @@ mod tests {
                         index: 4,
                     },
                     contents: "3",
-                    indentation: 0,
                 },
                 Token {
                     token_type: eoi!(),
@@ -2194,7 +2119,6 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
-                    indentation: 0,
                 }
             ]
         );
@@ -2221,7 +2145,6 @@ mod tests {
                         index: 24,
                     },
                     contents: "/*\r\n\r\n\r\nI am comment!\r\n*/",
-                    indentation: 0,
                 },
                 Token {
                     token_type: int!(),
@@ -2237,7 +2160,6 @@ mod tests {
                         index: 27,
                     },
                     contents: "123",
-                    indentation: 0,
                 },
                 Token {
                     token_type: normal_block_comment!(),
@@ -2253,7 +2175,6 @@ mod tests {
                         index: 53,
                     },
                     contents: "/*I am second comment!\r\n*/",
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2269,7 +2190,6 @@ mod tests {
                         index: 54,
                     },
                     contents: ";",
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2285,7 +2205,6 @@ mod tests {
                         index: 55,
                     },
                     contents: ";",
-                    indentation: 0,
                 },
                 Token {
                     token_type: eoi!(),
@@ -2301,7 +2220,6 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
-                    indentation: 0,
                 }
             ]
         );
@@ -2325,7 +2243,6 @@ mod tests {
                     },
                     len: 12,
                     contents: "'äääää'",
-                    indentation: 0,
                 },
                 Token {
                     token_type: eoi!(),
@@ -2341,7 +2258,6 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
-                    indentation: 0,
                 }
             ]
         )
@@ -2387,7 +2303,6 @@ mod tests {
                     },
                     len: 2,
                     contents: "\t\t",
-                    indentation: 2,
                 },
                 Token {
                     token_type: identifier!(),
@@ -2403,7 +2318,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "a",
-                    indentation: 2,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2419,7 +2333,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "\n",
-                    indentation: 2,
                 },
                 Token {
                     token_type: identifier!(),
@@ -2435,7 +2348,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "b",
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2451,7 +2363,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: white_space!(),
@@ -2467,7 +2378,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "\t",
-                    indentation: 1,
                 },
                 Token {
                     token_type: identifier!(),
@@ -2483,7 +2393,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "c",
-                    indentation: 1,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2499,7 +2408,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "\n",
-                    indentation: 1,
                 },
                 Token {
                     token_type: white_space!(),
@@ -2515,7 +2423,6 @@ mod tests {
                     },
                     len: 2,
                     contents: "\t\t",
-                    indentation: 2,
                 },
                 Token {
                     token_type: identifier!(),
@@ -2531,7 +2438,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "d",
-                    indentation: 2,
                 },
                 Token {
                     token_type: eoi!(),
@@ -2547,7 +2453,6 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
-                    indentation: 2,
                 }
             ]
         )
@@ -2574,7 +2479,6 @@ mod tests {
                     },
                     contents: "// comment",
                     len: 10,
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2590,7 +2494,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: normal_line_comment!(),
@@ -2606,7 +2509,6 @@ mod tests {
                     },
                     contents: "// comment",
                     len: 10,
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2622,7 +2524,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: normal_line_comment!(),
@@ -2638,7 +2539,6 @@ mod tests {
                     },
                     contents: "// comment",
                     len: 10,
-                    indentation: 0,
                 },
                 Token {
                     token_type: terminator!(),
@@ -2654,7 +2554,6 @@ mod tests {
                     },
                     len: 1,
                     contents: "\n",
-                    indentation: 0,
                 },
                 Token {
                     token_type: eoi!(),
@@ -2670,7 +2569,6 @@ mod tests {
                     },
                     len: 0,
                     contents: "",
-                    indentation: 0,
                 }
             ]
         )

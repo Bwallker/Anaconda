@@ -1,8 +1,12 @@
-mod lexer;
-mod parser;
+pub(crate) mod lexer;
+pub(crate) mod parser;
+pub(crate) mod generate_bytecode;
+pub(crate) mod util;
+pub(crate) mod runtime;
 use clap::{Args, Parser, Subcommand};
 use color_eyre::eyre::eyre;
-use parser::bytecode::{generate_bytecode, BytecodeInterpreter};
+use runtime::{bytecode::BytecodeInterpreter, gc::GarbageCollector};
+use generate_bytecode::generate_bytecode;
 use parser::parse;
 use std::fs::read_to_string;
 use std::io::Write;
@@ -134,7 +138,8 @@ fn run() -> color_eyre::Result<()> {
             match ast {
                 Ok(mut v) => {
                     let base_block = v.program.base_block.clone();
-                    let bytecode = generate_bytecode(&mut v);
+                    let mut gc = GarbageCollector::new();
+                    let bytecode = generate_bytecode(&mut v, &mut gc);
                     v.program.base_block = base_block;
                     std::fs::write("ast.txt", format!("{v:#?}"))?;
                     std::fs::write("bytecode.txt", format!("{bytecode}"))?;
@@ -162,8 +167,9 @@ fn run() -> color_eyre::Result<()> {
                 Ok(v) => v,
                 Err(e) => return Err(eyre!(format!("{e}"))),
             };
-            let bytecode = generate_bytecode(&mut ast);
-            let mut bytecode_interpreter = BytecodeInterpreter::new(ast.program, bytecode);
+            let mut gc = GarbageCollector::new();
+            let bytecode = generate_bytecode(&mut ast, &mut gc);
+            let mut bytecode_interpreter = BytecodeInterpreter::new(ast.program, bytecode, gc);
             bytecode_interpreter.interpret_bytecode();
         }
     }
