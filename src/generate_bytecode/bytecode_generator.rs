@@ -1,5 +1,7 @@
-
-use crate::runtime::{bytecode::{Bytecode, Function, OpCodes, USIZE_BYTES}, gc::{GcValue, GarbageCollector}};
+use crate::runtime::{
+    bytecode::{Bytecode, Function, OpCodes, USIZE_BYTES},
+    gc::{GarbageCollector, GcValue},
+};
 use crate::{
     lexer::lex::{
         ArithmeticOperatorTokenType, AssignmentOperatorTokenType,
@@ -16,11 +18,21 @@ use crate::{
     util::RemoveLastTrait,
 };
 pub(crate) trait GenerateBytecode {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector);
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    );
 }
 
 impl<'a> GenerateBytecode for Block<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         bytecode.push_opcode(OpCodes::BeginBlock);
         for child in self.children.iter_mut().remove_last() {
             child.gen_bytecode(bytecode, ast, gc);
@@ -49,7 +61,12 @@ impl<'a> GenerateBytecode for Block<'a> {
 }
 
 impl<'a> GenerateBytecode for BlockChild<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         match self {
             BlockChild::Statement(statement) => statement.gen_bytecode(bytecode, ast, gc),
             BlockChild::Block(block) => block.gen_bytecode(bytecode, ast, gc),
@@ -58,7 +75,12 @@ impl<'a> GenerateBytecode for BlockChild<'a> {
 }
 
 impl<'a> GenerateBytecode for Statement<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.statement_type.gen_bytecode(bytecode, ast, gc);
     }
 }
@@ -120,7 +142,12 @@ fn gen_bytecode_for_if_node<'a>(
 }
 
 impl<'a> GenerateBytecode for StatementType<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         match self {
             Self::Expr(e) => {
                 e.gen_bytecode(bytecode, ast, gc);
@@ -159,7 +186,7 @@ impl<'a> GenerateBytecode for StatementType<'a> {
                     AssignmentOperatorTokenType::PlusAssign => OpCodes::AddAndAssign,
                     AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
                     AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
-                    AssignmentOperatorTokenType::ProcentAssign => OpCodes::ModuloAndAssign,
+                    AssignmentOperatorTokenType::PercentAssign => OpCodes::ModuloAndAssign,
                     AssignmentOperatorTokenType::ExponentAssign => OpCodes::ExponentAndAssign,
                 };
                 e.gen_bytecode(bytecode, ast, gc);
@@ -194,7 +221,12 @@ impl<'a> GenerateBytecode for StatementType<'a> {
 }
 
 impl<'a> GenerateBytecode for Expression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.main_expression.gen_bytecode(bytecode, ast, gc);
         for sub_expr in self.sub_expressions.iter_mut() {
             sub_expr.gen_bytecode(bytecode, ast, gc)
@@ -203,7 +235,12 @@ impl<'a> GenerateBytecode for Expression<'a> {
 }
 
 impl<'a> GenerateBytecode for SubExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.expression.gen_bytecode(bytecode, ast, gc);
         let opcode = match self.keyword {
             BooleanComparisonKeywordTokenType::And => OpCodes::BooleanAnd,
@@ -214,13 +251,23 @@ impl<'a> GenerateBytecode for SubExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for ComparisonExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.comparison_type.gen_bytecode(bytecode, ast, gc)
     }
 }
 
 impl<'a> GenerateBytecode for ComparisonExpressionType<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         match self {
             Self::ComparisonChain(chain) => chain.gen_bytecode(bytecode, ast, gc),
             Self::Not(_n, e) => {
@@ -232,7 +279,12 @@ impl<'a> GenerateBytecode for ComparisonExpressionType<'a> {
 }
 
 impl<'a> GenerateBytecode for ComparisonChainExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.main_expression.gen_bytecode(bytecode, ast, gc);
         for sub_expr in self.sub_expressions.iter_mut() {
             sub_expr.gen_bytecode(bytecode, ast, gc)
@@ -241,7 +293,12 @@ impl<'a> GenerateBytecode for ComparisonChainExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for SubComparisonExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.expression.gen_bytecode(bytecode, ast, gc);
         let comparator = match self.operator {
             ComparisonOperatorTokenType::Equals => OpCodes::Equals,
@@ -256,7 +313,12 @@ impl<'a> GenerateBytecode for SubComparisonExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for ArithmeticExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.main_expression.gen_bytecode(bytecode, ast, gc);
         for sub_expr in self.sub_expressions.iter_mut() {
             sub_expr.gen_bytecode(bytecode, ast, gc)
@@ -265,7 +327,12 @@ impl<'a> GenerateBytecode for ArithmeticExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for SubArithmeticExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.expression.gen_bytecode(bytecode, ast, gc);
         let arith_op = match self.operator {
             ArithmeticOperatorTokenType::Unary(u) => match u {
@@ -282,7 +349,12 @@ impl<'a> GenerateBytecode for SubArithmeticExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for TermExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.main_expression.gen_bytecode(bytecode, ast, gc);
         for sub_expr in self.sub_expressions.iter_mut() {
             sub_expr.gen_bytecode(bytecode, ast, gc)
@@ -291,7 +363,12 @@ impl<'a> GenerateBytecode for TermExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for SubTermExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.expression.gen_bytecode(bytecode, ast, gc);
         bytecode.push_opcode(match self.operator {
             TermOperatorTokenType::BitshiftLeft => OpCodes::BitshiftLeft,
@@ -304,13 +381,23 @@ impl<'a> GenerateBytecode for SubTermExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for FactorExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.factor_type.gen_bytecode(bytecode, ast, gc)
     }
 }
 
 impl<'a> GenerateBytecode for FactorExpressionType<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         match self {
             Self::Exponent(exponent) => {
                 exponent.gen_bytecode(bytecode, ast, gc);
@@ -328,7 +415,12 @@ impl<'a> GenerateBytecode for FactorExpressionType<'a> {
 }
 
 impl<'a> GenerateBytecode for ExponentExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.main_expression.gen_bytecode(bytecode, ast, gc);
         for sub_expr in self.sub_expressions.iter_mut() {
             sub_expr.gen_bytecode(bytecode, ast, gc)
@@ -337,14 +429,24 @@ impl<'a> GenerateBytecode for ExponentExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for SubExponentExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.expression.gen_bytecode(bytecode, ast, gc);
         bytecode.push_opcode(OpCodes::Exponent)
     }
 }
 
 impl<'a> GenerateBytecode for CallExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         if let Some(ref mut func_calls_params) = self.func_call_params {
             self.atom.gen_bytecode(bytecode, ast, gc);
             for params in func_calls_params.iter_mut() {
@@ -361,13 +463,23 @@ impl<'a> GenerateBytecode for CallExpression<'a> {
 }
 
 impl<'a> GenerateBytecode for AtomicExpression<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         self.atom_type.gen_bytecode(bytecode, ast, gc);
     }
 }
 
 impl<'a> GenerateBytecode for AtomicExpressionType<'a> {
-    fn gen_bytecode(&mut self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
+    fn gen_bytecode(
+        &mut self,
+        bytecode: &mut Bytecode,
+        ast: &mut Ast<'_>,
+        gc: &mut GarbageCollector,
+    ) {
         match self {
             Self::Int(i) => match i {
                 Int::Small(value) => {

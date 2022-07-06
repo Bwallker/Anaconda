@@ -1,8 +1,8 @@
-fibbonacci = fun(num)
+fibonacci = fun(num)
     if num == 0 or num == 1
         return 1
     
-    return fibbonacci(num - 1) + fibbonacci(num - 2)
+    return fibonacci(num - 1) + fibonacci(num - 2)
 
 factorial = fun(num)
     if num == 0 or num == 1

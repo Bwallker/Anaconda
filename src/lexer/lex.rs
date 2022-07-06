@@ -451,7 +451,7 @@ pub(crate) enum AssignmentOperatorTokenType {
     MinusAssign,
     StarAssign,
     SlashAssign,
-    ProcentAssign,
+    PercentAssign,
     BitshiftLeftAssign,
     BitshiftRightAssign,
     BitwiseAndAssign,
@@ -534,15 +534,15 @@ macro_rules! slash_assign {
 
 pub(crate) use slash_assign;
 
-macro_rules! procent_assign {
+macro_rules! percent_assign {
     () => {
         crate::lexer::lex::TokenType::Operator(crate::lexer::lex::OperatorTokenType::Assignment(
-            crate::lexer::lex::AssignmentOperatorTokenType::ProcentAssign,
+            crate::lexer::lex::AssignmentOperatorTokenType::PercentAssign,
         ))
     };
 }
 
-pub(crate) use procent_assign;
+pub(crate) use percent_assign;
 
 macro_rules! bitshift_left_assign {
     () => {
@@ -1677,7 +1677,7 @@ impl<'a> Lexer<'a> {
 
         tag("/=", slash_assign!()).boxed(),
         tag("*=", star_assign!()).boxed(),
-        tag("%=", procent_assign!()).boxed(),
+        tag("%=", percent_assign!()).boxed(),
         tag("<<=", bitshift_left_assign!()).boxed(),
         tag(">>=", bitshift_right_assign!()).boxed(),
 

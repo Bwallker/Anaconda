@@ -796,7 +796,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                     return Err(ast.create_parse_error_with_message(
                         ast.index,
                         1,
-                        "Expected a terminator after 'loop' keyowrd".into(),
+                        "Expected a terminator after 'loop' keyword".into(),
                     ));
                 }
                 ast.index += 1;

@@ -327,6 +327,15 @@ pub(crate) struct BytecodeInterpreter<'a> {
     pub(crate) gc: GarbageCollector,
 }
 
+impl Drop for BytecodeInterpreter<'_> {
+    fn drop(&mut self) {
+        // SAFETY: Calling collect when the interpreter is dropped is safe because all outstanding references and pointers to things owned by the GC should be gone at this point, and the GC will go away after this function so we need to clean up all the memory that has not been collected yet.
+        unsafe {
+            self.gc.collect_garbage(&vec![], &vec![]);
+        }
+    }
+}
+
 impl<'a> BytecodeInterpreter<'a> {
     pub(crate) fn new(program: Program<'a>, bytecode: Bytecode, gc: GarbageCollector) -> Box<Self> {
         let mut this = Box::new(Self {
@@ -843,7 +852,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 > i2,
                     (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => b1 & !b2,
                     (v1, v2) => {
-                        panic!("Gannot perform > operation on {v1} and {v2}")
+                        panic!("Cannot perform > operation on {v1} and {v2}")
                     }
                 }))
             }
@@ -855,7 +864,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 >= i2,
                     (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => b1 >= b2,
                     (v1, v2) => {
-                        panic!("Gannot perform >= operation on {v1} and {v2}")
+                        panic!("Cannot perform >= operation on {v1} and {v2}")
                     }
                 }))
             }
@@ -867,7 +876,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     (AnacondaValue::Int(i1), AnacondaValue::Int(i2)) => i1 < i2,
                     (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => !b1 & b2,
                     (v1, v2) => {
-                        panic!("Gannot perform < operation on {v1} and {v2}")
+                        panic!("Cannot perform < operation on {v1} and {v2}")
                     }
                 }))
             }
@@ -880,7 +889,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     (AnacondaValue::Bool(b1), AnacondaValue::Bool(b2)) => b1 <= b2,
 
                     (v1, v2) => {
-                        panic!("Gannot perform <= operation on {v1} and {v2}")
+                        panic!("Cannot perform <= operation on {v1} and {v2}")
                     }
                 }))
             }
@@ -1002,7 +1011,7 @@ impl<'a> BytecodeInterpreter<'a> {
                             self.stack.push(AnacondaValue::String(Cow::Borrowed("")));
                         }
                         Ordering::Less => {
-                            panic!("Cannot multipy a string by a value less than 0");
+                            panic!("Cannot multiply a string by a value less than 0");
                         }
                         Ordering::Greater => {
                             let s = s.as_ref().repeat(i.try_into().unwrap_or(usize::MAX));
@@ -1131,7 +1140,11 @@ impl<'a> BytecodeInterpreter<'a> {
         }
         println!("{:#?}", self.stack_frames);
         println!("{:#?}", self.stack);
-        self.gc.collect_garbage(&self.stack, &self.stack_frames);
+        // SAFETY: Calling collect_garbage is safe because we do not hold any pointer or references to anything owned by the GC.
+        unsafe {
+            self.gc.collect_garbage(&self.stack, &self.stack_frames);
+
+        }
     }
 
     fn get_var_by_index<'b>(&'b self, idx: usize) -> Option<&'b AnacondaValue<'a>> {
@@ -1248,17 +1261,20 @@ impl<'a> AnacondaValue<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{parser::parse, runtime::gc::GarbageCollector, generate_bytecode};
 
-    use super::BytecodeInterpreter;
+    use crate::{runtime::gc::{GarbageCollector, GcValue}};
 
     #[test]
     fn test_ub() -> Result<(), Box<dyn std::error::Error>> {
-        let mut ast = parse("main = fun()\r\n\tprintln('Hello, World!')\r\n")?;
         let mut gc = GarbageCollector::new();
-        let bytecode = generate_bytecode(&mut ast, &mut gc);
-        let mut bytecode_interpreter = BytecodeInterpreter::new(ast.program, bytecode, gc);
-        bytecode_interpreter.interpret_bytecode();
+        let _val = GcValue::new("ABC".to_string(), &mut gc);
+        unsafe {
+            // SAFETY: We hold no outstanding references to anything owned by the GC
+            // SAFETY: And calling collect_garbage with an empty stack and stack_frames is always safe under these circumstances.
+            gc.collect_garbage(&vec![], &vec![]);
+
+        }
+        
         Ok(())
     }
 }

@@ -45,4 +45,5 @@ impl<I: Iterator<Item = T>, T> RemoveLastTrait<I, T> for I {
 }
 
 pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<XxHash64>>;
+#[allow(dead_code)]
 pub(crate) type FastSet<T> = HashSet<T, BuildHasherDefault<XxHash64>>;
