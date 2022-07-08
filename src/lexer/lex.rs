@@ -162,9 +162,10 @@ pub(crate) use docs_block_comment;
 pub(crate) enum KeywordTokenType {
     BooleanComparison(BooleanComparisonKeywordTokenType),
     If(IfKeywordTokenType),
-    Not(NotKeywordTokenType),
+    Not,
     Statement(StatementKeywordTokenType),
-    FunctionDefinition(FunctionDefinitionKeywordTokenType),
+    FunctionDefinition,
+    ClassDefinition,
     Loop(LoopKeywordTokenType),
     Value(ValueKeywordTokenType),
 }
@@ -270,14 +271,9 @@ macro_rules! else_ {
 
 pub(crate) use else_;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum NotKeywordTokenType {
-    Not,
-}
-
 macro_rules! not {
     () => {
-        TokenType::Keyword(KeywordTokenType::Not(NotKeywordTokenType::Not))
+        TokenType::Keyword(KeywordTokenType::Not)
     };
 }
 
@@ -329,22 +325,25 @@ macro_rules! return_ {
 
 pub(crate) use return_;
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub(crate) enum FunctionDefinitionKeywordTokenType {
-    Fun,
-}
-
 macro_rules! fun {
     () => {
         crate::lexer::lex::TokenType::Keyword(
-            crate::lexer::lex::KeywordTokenType::FunctionDefinition(
-                crate::lexer::lex::FunctionDefinitionKeywordTokenType::Fun,
-            ),
+            crate::lexer::lex::KeywordTokenType::FunctionDefinition,
         )
     };
 }
 
 pub(crate) use fun;
+
+macro_rules! class {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::ClassDefinition,
+        )
+    };
+}
+
+pub(crate) use class;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum LoopKeywordTokenType {
@@ -1729,6 +1728,7 @@ impl<'a> Lexer<'a> {
         keyword("and", and!()).boxed(),
         keyword("or", or!()).boxed(),
         keyword("fun", fun!()).boxed(),
+        keyword("class", class!()).boxed(),
         keyword("if", if_!()).boxed(),
         keyword("elif", elif!()).boxed(),
         keyword("else", else_!()).boxed(),

@@ -85,14 +85,14 @@ impl GarbageCollector {
             if let StackFrame::Scope(s) = stack_frame {
                 for var in s.variables.values() {
                     if let AnacondaValue::Type(t) = var {
-                        self.garbage_collect_type(t)
+                        self.handle_type(t)
                     }
                 }
             }
         }
         for var in stack {
             if let AnacondaValue::Type(t) = var {
-                self.garbage_collect_type(t)
+                self.handle_type(t)
             }
         }
 
@@ -114,14 +114,13 @@ impl GarbageCollector {
             // SAFETY: Here we are calling the drop implementation for the type stored inside the GC Item.
             // SAFETY: In reality drop_func takes a *mut T and value is *mut T, but the type system thinks they are u8 pointers.
             // SAFETY: This is borderline UB, but miri says it's fine?
-            // SAFETY: Some pretty scary stuff.
             drop_func(value);
             std::alloc::dealloc(value, Layout::from_size_align_unchecked(size, alignment));
         }
     }
     /// Handle garbage collection for this type instance. Mark all its children and itself as used.
     /// The current implementation panics if t is not owned by this garbage collector. Future implementations may change this to something else. Calling this function with values not owned by this garbage collector in the future may result in UB.
-    fn garbage_collect_type(&mut self, t: &GcValue<Type<'_>>) {
+    fn handle_type(&mut self, t: &GcValue<Type<'_>>) {
         // Return early if we have already handled this type instance. Otherwise indicate that it is currently being used.
         unsafe {
             // SAFETY: Creating a GarbageCollectorItem from a GcValue is safe because the value with a GcValue is always owned by this garbage collector and it points to a valid heap allocated non dropped instance.
@@ -141,7 +140,7 @@ impl GarbageCollector {
         t.with(|v| {
             v.fields.values().for_each(|x| {
                 if let AnacondaValue::Type(t) = x {
-                    self.garbage_collect_type(t);
+                    self.handle_type(t);
                 }
             });
         })

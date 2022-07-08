@@ -713,7 +713,7 @@ impl<'a> BytecodeInterpreter<'a> {
                     ($e: tt) => {
                         {
                             self.program_counter += 1;
-                            let from_stack_var = self.stack.pop().unwrap();
+                            let from_stack_var = self.stack.pop().expect("Stack should not be empty");
                             let idx = self.bytecode.read_usize(self.program_counter);
                             self.program_counter += USIZE_BYTES;
                             let var = self.get_var_by_index_mut(idx);
