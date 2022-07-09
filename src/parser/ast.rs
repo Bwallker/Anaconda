@@ -11,7 +11,6 @@ use crate::lexer::lex::{
 use crate::runtime::bytecode::{Program, ValueStore};
 use ibig::{ibig, IBig};
 use std::fmt::{Debug, Display};
-use super::validator::validate_ast;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct NodePositionData<'a> {
     pub(crate) contents: &'a str,
@@ -64,6 +63,7 @@ pub(crate) struct IfNode<'a> {
     pub(crate) then_block: Block<'a>,
     pub(crate) elif_nodes: Vec<ElifNode<'a>>,
     pub(crate) else_nodes: Option<ElseNode<'a>>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,12 +71,15 @@ pub(crate) struct ElifNode<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) condition: Expression<'a>,
     pub(crate) then_block: Block<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ElseNode<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) else_block: Block<'a>,
+    pub(crate) has_return_value: bool,
+
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,17 +94,12 @@ pub(crate) struct WhileStatement<'a> {
     pub(crate) body: Block<'a>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Identifier<'a> {
-    pub(crate) id: &'a str,
-    pub(crate) position: NodePositionData<'a>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Expression<'a> {
     pub(crate) main_expression: ComparisonExpression<'a>,
     pub(crate) sub_expressions: Vec<SubExpression<'a>>,
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,12 +107,14 @@ pub(crate) struct SubExpression<'a> {
     pub(crate) keyword: BooleanComparisonKeywordTokenType,
     pub(crate) expression: ComparisonExpression<'a>,
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ComparisonExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) comparison_type: ComparisonExpressionType<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +128,7 @@ pub(crate) struct ComparisonChainExpression<'a> {
     pub(crate) main_expression: ArithmeticExpression<'a>,
     pub(crate) sub_expressions: Vec<SubComparisonExpression<'a>>,
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +136,7 @@ pub(crate) struct SubComparisonExpression<'a> {
     pub(crate) operator: ComparisonOperatorTokenType,
     pub(crate) expression: ArithmeticExpression<'a>,
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,6 +144,7 @@ pub(crate) struct ArithmeticExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) main_expression: TermExpression<'a>,
     pub(crate) sub_expressions: Vec<SubArithmeticExpression<'a>>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,6 +152,7 @@ pub(crate) struct SubArithmeticExpression<'a> {
     pub(crate) operator: ArithmeticOperatorTokenType,
     pub(crate) expression: TermExpression<'a>,
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +160,7 @@ pub(crate) struct TermExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) main_expression: FactorExpression<'a>,
     pub(crate) sub_expressions: Vec<SubTermExpression<'a>>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,12 +168,14 @@ pub(crate) struct SubTermExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) operator: TermOperatorTokenType,
     pub(crate) expression: FactorExpression<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FactorExpression<'a> {
     pub(crate) factor_type: FactorExpressionType<'a>,
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,12 +189,14 @@ pub(crate) struct ExponentExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) main_expression: CallExpression<'a>,
     pub(crate) sub_expressions: Vec<SubExponentExpression<'a>>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubExponentExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) expression: CallExpression<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,12 +206,14 @@ pub(crate) struct CallExpression<'a> {
     /// For instance, consider this code: `foo(1, 2, 3)(4, 5, 6)`. Here we are calling two functions in a row. We parse this into our vec of vecs of params as [[1, 2, 3], [4, 5, 6]].
     pub(crate) func_call_params: Option<Vec<Vec<Expression<'a>>>>,
     pub(crate) position: NodePositionData<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AtomicExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) atom_type: AtomicExpressionType<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,7 +248,7 @@ pub(crate) struct ForExpression;
 pub(crate) struct WhileExpression;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FunctionDefinitionExpression<'a> {
-    pub(crate) args: Vec<Identifier<'a>>,
+    pub(crate) args: Vec<&'a str>,
     pub(crate) body: Block<'a>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,12 +273,7 @@ impl<'a> Display for ParserError<'a> {
 }
 
 impl std::error::Error for ParserError<'_> {}
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ExpressionType {
-    ReturnsValue,
-    DoesNotReturnValue,
-    Undetermined,
-}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Ast<'a> {
     pub(crate) index: usize,
@@ -301,6 +307,9 @@ impl<'a> Ast<'a> {
 
     fn current_token_type(&self) -> TokenType {
         self.current_token().token_type
+    }
+    fn create_standard_position(&mut self, first_token_index: usize) -> NodePositionData<'a> {
+        self.create_position(first_token_index, self.index - first_token_index + 1)
     }
     fn create_position(
         &mut self,
@@ -367,10 +376,9 @@ impl<'a> Ast<'a> {
     }
 
     pub fn parse(mut self) -> ParserResult<'a, Self> {
-        let base_block = Block::expect(&mut self)?;
+        let base_block = Block::expect(&mut self, false)?;
 
         self.program.base_block = Some(base_block);
-        validate_ast(&mut self)?;
         Ok(self)
     }
 
@@ -433,22 +441,12 @@ fn parse_int(contents: &str) -> IBig {
 
 pub(crate) type ParserResult<'a, T> = Result<T, ParserError<'a>>;
 
-trait ExpectSelf<'a, T = ()>: Sized {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self>;
-    #[allow(unused_variables)]
-    fn expect_with_extra_args(ast: &mut Ast<'a>, extra_args: T) -> ParserResult<'a, Self> {
-        Self::expect(ast)
-    }
+trait ExpectSelf<'a>: Sized {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self>;
 }
 
-impl<'a> ExpectSelf<'a, bool> for Block<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
-        Self::expect_with_extra_args(ast, false)
-    }
-    fn expect_with_extra_args(
-        ast: &mut Ast<'a>,
-        last_statement_is_expression: bool,
-    ) -> ParserResult<'a, Self> {
+impl<'a> ExpectSelf<'a> for Block<'a> {
+    fn expect(ast: &mut Ast<'a>, last_statement_is_expression: bool) -> ParserResult<'a, Self> {
         let first_token_index = ast.index;
         ast.step_over_whitespace_and_block_comments();
         let indentation_level_for_this_block = ast.current_column_number();
@@ -467,7 +465,7 @@ impl<'a> ExpectSelf<'a, bool> for Block<'a> {
                     break;
                 }
                 std::cmp::Ordering::Equal => {
-                    let statement = match Statement::expect(ast) {
+                    let statement = match Statement::expect(ast, last_statement_is_expression) {
                         Ok(statement) => statement,
                         Err(error) => match error {
                             ParserError::WrongForm => {
@@ -480,7 +478,7 @@ impl<'a> ExpectSelf<'a, bool> for Block<'a> {
                     children.push(BlockChild::Statement(Box::new(statement)));
                 }
                 std::cmp::Ordering::Greater => {
-                    let block = match Block::expect_with_extra_args(ast, last_statement_is_expression) {
+                    let block = match Block::expect(ast, last_statement_is_expression) {
                         Ok(block) => block,
                         Err(error) => match error {
                             ParserError::WrongForm => {
@@ -513,40 +511,51 @@ impl<'a> ExpectSelf<'a, bool> for Block<'a> {
         };
         match b.children.last_mut() {
             None => (),
-            Some(ref mut v) => {
-                match v {
-                    BlockChild::Block(b) => {
-                        b.last_statement_is_expression = last_statement_is_expression
-                    }
-                    BlockChild::Statement(s) => {
-                        if b.last_statement_is_expression {
-                            match s.statement_type {
-                                StatementType::Expr(_) => (),
-                                _ => return Err(ast.create_parse_error_with_message(
+            Some(ref mut v) => match v {
+                BlockChild::Block(b) => {
+                    b.last_statement_is_expression = last_statement_is_expression
+                }
+                BlockChild::Statement(s) => {
+                    if b.last_statement_is_expression {
+                        match s.statement_type {
+                            StatementType::Expr(_) => (),
+                            _ => {
+                                return Err(ast.create_parse_error_with_message(
                                     s.position.index,
                                     s.position.len,
-                                    "Blocks that return expressions must end with an expression."
+                                    "Blocks that are expressions must end with an expression."
                                         .into(),
-                                )),
+                                ))
                             }
                         }
                     }
                 }
-            }
+            },
         }
 
         Ok(b)
     }
 }
 
-impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+impl<'a> ExpectSelf<'a> for Statement<'a> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         let indent_at_start = ast.current_column_number();
         ast.step_over_whitespace_and_comments_and_terminators();
         let index_before_statement = ast.index;
         if ast.current_column_number() < indent_at_start {
             ast.index = index_before_statement;
             return Err(ParserError::WrongForm);
+        }
+        macro_rules! create_statement_expression {
+            () => {{
+                ast.index = index_before_statement;
+
+                let expression = Expression::expect(ast, has_return_value)?;
+                return Ok(Statement {
+                    position: expression.position,
+                    statement_type: StatementType::Expr(expression),
+                });
+            }};
         }
         match ast.current_token_type() {
             break_!() => {
@@ -557,10 +566,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                     terminator!() => {
                         return Ok(Statement {
                             statement_type: StatementType::Break,
-                            position: ast.create_position(
-                                first_token_index,
-                                ast.index - first_token_index + 1,
-                            ),
+                            position: ast.create_standard_position(first_token_index),
                         });
                     }
                     _ => {
@@ -580,10 +586,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                     terminator!() => {
                         return Ok(Statement {
                             statement_type: StatementType::Continue,
-                            position: ast.create_position(
-                                first_token_index,
-                                ast.index - first_token_index + 1,
-                            ),
+                            position: ast.create_standard_position(first_token_index),
                         });
                     }
                     _ => {
@@ -603,20 +606,14 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                     terminator!() => {
                         return Ok(Statement {
                             statement_type: StatementType::Return(None),
-                            position: ast.create_position(
-                                first_token_index,
-                                ast.index - first_token_index + 1,
-                            ),
+                            position: ast.create_standard_position(first_token_index),
                         });
                     }
-                    _ => match Expression::expect(ast) {
+                    _ => match Expression::expect(ast, true) {
                         Ok(expression) => {
                             return Ok(Statement {
                                 statement_type: StatementType::Return(Some(expression)),
-                                position: ast.create_position(
-                                    first_token_index,
-                                    ast.index - first_token_index + 1,
-                                ),
+                                position: ast.create_standard_position(first_token_index),
                             });
                         }
                         Err(error) => match error {
@@ -646,7 +643,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                 }
                 ast.index += 1;
                 ast.step_over_whitespace_and_comments_and_terminators();
-                let body = match Block::expect(ast) {
+                let body = match Block::expect(ast, false) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -659,7 +656,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                         _ => return Err(e),
                     },
                 };
-                let pos = ast.create_position(first_token_index, ast.index - first_token_index + 1);
+                let pos = ast.create_standard_position(first_token_index);
                 return Ok(Statement {
                     statement_type: StatementType::LoopStatement(LoopStatement {
                         position: pos,
@@ -672,7 +669,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                 let first_token_index = ast.index;
                 ast.index += 1;
                 ast.step_over_whitespace_and_block_comments();
-                let condition = match Expression::expect(ast) {
+                let condition = match Expression::expect(ast, true) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -696,7 +693,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                 }
                 ast.index += 1;
                 ast.step_over_whitespace_and_comments_and_terminators();
-                let body = match Block::expect(ast) {
+                let body = match Block::expect(ast, false) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -713,8 +710,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                     StatementType::WhileStatement(WhileStatement { condition, body });
                 return Ok(Statement {
                     statement_type,
-                    position: ast
-                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    position: ast.create_standard_position(first_token_index),
                 });
             }
             identifier!() => {
@@ -729,7 +725,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                     assignment_operator_tt!(assign_tok) => {
                         ast.index += 1;
                         ast.step_over_whitespace_and_block_comments();
-                        match Expression::expect(ast) {
+                        match Expression::expect(ast, true) {
                                 Ok(expression) => {
 
                                     return Ok(Statement {
@@ -738,7 +734,7 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                                             assign_tok,
                                             expression,
                                         ),
-                                        position: ast.create_position(first_token_index, ast.index - first_token_index + 1)
+                                        position: ast.create_standard_position(first_token_index)
                                     });
                                 }
                                 Err(error) => match error {
@@ -753,56 +749,35 @@ impl<'a> ExpectSelf<'a, bool> for Statement<'a> {
                                 },
                         }
                     }
-                    _ => {
-                        ast.index = index_before_statement;
-                        let expression = match Expression::expect(ast) {
-                            Ok(v) => v,
-                            Err(e) => match e {
-                                ParserError::WrongForm => {
-                                    ast.index = first_token_index;
-                                    return Err(e);
-                                }
-                                _ => return Err(e),
-                            },
-                        };
-                        return Ok(Statement {
-                            position: expression.position,
-                            statement_type: StatementType::Expr(expression),
-                        });
-                    }
+                    _ => create_statement_expression!(),
                 }
             }
             _ => {
-                ast.index = index_before_statement;
-                
-                let expression = Expression::expect(ast)?;
-                return Ok(Statement {
-                    position: expression.position,
-                    statement_type: StatementType::Expr(expression),
-                });
+                create_statement_expression!()
             }
         }
     }
 }
 
-impl<'a> ExpectSelf<'a, bool> for Expression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+impl<'a> ExpectSelf<'a> for Expression<'a> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
-        let comp_expr = ComparisonExpression::expect(ast)?;
+        let comp_expr = ComparisonExpression::expect(ast, has_return_value)?;
         ast.index += 1;
         let mut sub_expressions = vec![];
         if ast.current_token_type() == eoi!() {
             ast.index -= 1;
 
             return Ok(Expression {
-                position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+                position: ast.create_standard_position(first_token_index),
                 main_expression: comp_expr,
                 sub_expressions,
+                has_return_value,
             });
         }
         loop {
-            let sub_expr = match SubExpression::expect(ast) {
+            let sub_expr = match SubExpression::expect(ast, has_return_value) {
                 Ok(v) => v,
                 Err(e) => match e {
                     ParserError::WrongForm => {
@@ -817,25 +792,26 @@ impl<'a> ExpectSelf<'a, bool> for Expression<'a> {
                 ast.index -= 1;
 
                 return Ok(Expression {
-                    position: ast
-                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    position: ast.create_standard_position(first_token_index),
                     main_expression: comp_expr,
                     sub_expressions,
+                    has_return_value,
                 });
             }
         }
         ast.index -= 1;
 
         Ok(Expression {
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
             sub_expressions,
             main_expression: comp_expr,
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for SubExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         let keyword = match ast.current_token().token_type {
@@ -846,7 +822,7 @@ impl<'a> ExpectSelf<'a> for SubExpression<'a> {
         ast.index += 1;
         ast.step_over_whitespace_and_block_comments();
 
-        let expr = match ComparisonExpression::expect(ast) {
+        let expr = match ComparisonExpression::expect(ast, has_return_value) {
             Ok(v) => v,
             Err(e) => match e {
                 ParserError::WrongForm => return Err(ast.create_parse_error_with_message(ast.index, 1, "the 'and' and 'or' keywords must be followed by a valid comparison expression.".into())),
@@ -857,20 +833,21 @@ impl<'a> ExpectSelf<'a> for SubExpression<'a> {
         Ok(SubExpression {
             keyword,
             expression: expr,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for ComparisonExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         let comparison_type = if ast.current_token().token_type == not!() {
             ast.index += 1;
 
             let inner =
-                match ComparisonExpression::expect(ast) {
+                match ComparisonExpression::expect(ast, has_return_value) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => return Err(ast.create_parse_error_with_message(
@@ -885,13 +862,12 @@ impl<'a> ExpectSelf<'a> for ComparisonExpression<'a> {
             ComparisonExpressionType::Not(Box::new(inner))
         } else {
             let first_token_index = ast.index;
-            let arith = ArithmeticExpression::expect(ast)?;
+            let arith = ArithmeticExpression::expect(ast, has_return_value)?;
             ast.index += 1;
             let mut sub_exprs = vec![];
             if ast.current_token_type() == eoi!() {
                 ast.index -= 1;
-                let position =
-                    ast.create_position(first_token_index, ast.index - first_token_index + 1);
+                let position = ast.create_standard_position(first_token_index);
                 return Ok(ComparisonExpression {
                     position,
                     comparison_type: ComparisonExpressionType::ComparisonChain(Box::new(
@@ -899,12 +875,14 @@ impl<'a> ExpectSelf<'a> for ComparisonExpression<'a> {
                             main_expression: arith,
                             sub_expressions: sub_exprs,
                             position,
+                            has_return_value,
                         },
                     )),
+                    has_return_value,
                 });
             }
             loop {
-                let sub_expr = match SubComparisonExpression::expect(ast) {
+                let sub_expr = match SubComparisonExpression::expect(ast, has_return_value) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -918,15 +896,16 @@ impl<'a> ExpectSelf<'a> for ComparisonExpression<'a> {
                 sub_exprs.push(sub_expr);
                 if ast.current_token_type() == eoi!() {
                     ast.index -= 1;
-                    let position =
-                        ast.create_position(first_token_index, ast.index - first_token_index + 1);
+                    let position = ast.create_standard_position(first_token_index);
                     return Ok(ComparisonExpression {
+                        has_return_value,
                         position,
                         comparison_type: ComparisonExpressionType::ComparisonChain(Box::new(
                             ComparisonChainExpression {
                                 main_expression: arith,
                                 sub_expressions: sub_exprs,
                                 position,
+                                has_return_value,
                             },
                         )),
                     });
@@ -934,21 +913,23 @@ impl<'a> ExpectSelf<'a> for ComparisonExpression<'a> {
             }
 
             ComparisonExpressionType::ComparisonChain(Box::new(ComparisonChainExpression {
-                position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+                position: ast.create_standard_position(first_token_index),
                 main_expression: arith,
                 sub_expressions: sub_exprs,
+                has_return_value,
             }))
         };
 
         Ok(ComparisonExpression {
             comparison_type,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for SubComparisonExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         let operator = match ast.current_token().token_type {
@@ -962,7 +943,7 @@ impl<'a> ExpectSelf<'a> for SubComparisonExpression<'a> {
         };
         ast.index += 1;
         ast.step_over_whitespace_and_block_comments();
-        let expr = match ArithmeticExpression::expect(ast) {
+        let expr = match ArithmeticExpression::expect(ast, has_return_value) {
             Ok(v) => v,
             Err(e) => match e {
                 ParserError::WrongForm => return Err(ast.create_parse_error_with_message(ast.index, 1, "the '==', '!=', '<', '>', '<=', and '>=' operators must be followed by a valid arithmetic expression.".into())),
@@ -973,31 +954,32 @@ impl<'a> ExpectSelf<'a> for SubComparisonExpression<'a> {
         Ok(SubComparisonExpression {
             operator,
             expression: expr,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for ArithmeticExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
-        let term = TermExpression::expect(ast)?;
+        let term = TermExpression::expect(ast, has_return_value)?;
         ast.index += 1;
         let mut sub_exprs = vec![];
         if ast.current_token_type() == eoi!() {
             ast.index -= 1;
-            let position =
-                ast.create_position(first_token_index, ast.index - first_token_index + 1);
+            let position = ast.create_standard_position(first_token_index);
 
             return Ok(ArithmeticExpression {
                 position,
                 main_expression: term,
                 sub_expressions: sub_exprs,
+                has_return_value,
             });
         }
         loop {
-            let sub_expr = match SubArithmeticExpression::expect(ast) {
+            let sub_expr = match SubArithmeticExpression::expect(ast, has_return_value) {
                 Ok(v) => v,
                 Err(e) => match e {
                     ParserError::WrongForm => {
@@ -1011,27 +993,28 @@ impl<'a> ExpectSelf<'a> for ArithmeticExpression<'a> {
             sub_exprs.push(sub_expr);
             if ast.current_token_type() == eoi!() {
                 ast.index -= 1;
-                let position =
-                    ast.create_position(first_token_index, ast.index - first_token_index + 1);
+                let position = ast.create_standard_position(first_token_index);
 
                 return Ok(ArithmeticExpression {
                     position,
                     main_expression: term,
                     sub_expressions: sub_exprs,
+                    has_return_value,
                 });
             }
         }
 
         Ok(ArithmeticExpression {
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
             main_expression: term,
             sub_expressions: sub_exprs,
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for SubArithmeticExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         let operator = match ast.current_token().token_type {
@@ -1045,7 +1028,7 @@ impl<'a> ExpectSelf<'a> for SubArithmeticExpression<'a> {
         ast.index += 1;
         ast.step_over_whitespace_and_block_comments();
 
-        let expr = match TermExpression::expect(ast) {
+        let expr = match TermExpression::expect(ast, has_return_value) {
             Ok(v) => v,
             Err(e) => match e {
                 ParserError::WrongForm => return Err(ast.create_parse_error_with_message(ast.index, 1, "the '+', '-', '&', '|', and '^' operators must be followed by a valid term expression.".into())),
@@ -1056,31 +1039,32 @@ impl<'a> ExpectSelf<'a> for SubArithmeticExpression<'a> {
         Ok(SubArithmeticExpression {
             operator,
             expression: expr,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for TermExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
-        let factor = FactorExpression::expect(ast)?;
+        let factor = FactorExpression::expect(ast, has_return_value)?;
         ast.index += 1;
         let mut sub_exprs = vec![];
         if ast.current_token_type() == eoi!() {
             ast.index -= 1;
-            let position =
-                ast.create_position(first_token_index, ast.index - first_token_index + 1);
+            let position = ast.create_standard_position(first_token_index);
 
             return Ok(TermExpression {
                 position,
                 main_expression: factor,
                 sub_expressions: sub_exprs,
+                has_return_value,
             });
         }
         loop {
-            let sub_expr = match SubTermExpression::expect(ast) {
+            let sub_expr = match SubTermExpression::expect(ast, has_return_value) {
                 Ok(v) => v,
                 Err(e) => match e {
                     ParserError::WrongForm => {
@@ -1094,13 +1078,13 @@ impl<'a> ExpectSelf<'a> for TermExpression<'a> {
             sub_exprs.push(sub_expr);
             if ast.current_token_type() == eoi!() {
                 ast.index -= 1;
-                let position =
-                    ast.create_position(first_token_index, ast.index - first_token_index + 1);
+                let position = ast.create_standard_position(first_token_index);
 
                 return Ok(TermExpression {
                     position,
                     main_expression: factor,
                     sub_expressions: sub_exprs,
+                    has_return_value,
                 });
             }
         }
@@ -1108,13 +1092,14 @@ impl<'a> ExpectSelf<'a> for TermExpression<'a> {
         Ok(TermExpression {
             main_expression: factor,
             sub_expressions: sub_exprs,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for SubTermExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         let operator = match ast.current_token().token_type {
@@ -1127,7 +1112,7 @@ impl<'a> ExpectSelf<'a> for SubTermExpression<'a> {
         };
         ast.index += 1;
         ast.step_over_whitespace_and_block_comments();
-        let expr = match FactorExpression::expect(ast) {
+        let expr = match FactorExpression::expect(ast, has_return_value) {
             Ok(v) => v,
             Err(e) => match e {
                 ParserError::WrongForm => return Err(ast.create_parse_error_with_message(ast.index, 1, "the '*', '/', '%', '<<', and '>>' operators must be followed by a valid factor expression.".into())),
@@ -1138,13 +1123,14 @@ impl<'a> ExpectSelf<'a> for SubTermExpression<'a> {
         Ok(SubTermExpression {
             operator,
             expression: expr,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for FactorExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         match ast.current_token().token_type {
@@ -1152,7 +1138,7 @@ impl<'a> ExpectSelf<'a> for FactorExpression<'a> {
                 let first_token_index = ast.index;
                 ast.index += 1;
                 ast.step_over_whitespace_and_block_comments();
-                let expr = match FactorExpression::expect(ast) {
+                let expr = match FactorExpression::expect(ast, has_return_value) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => return Err(ast.create_parse_error_with_message(ast.index, 1, "the unary operators '~', '+' and '-' must be followed by a valid factor expression.".into())),
@@ -1162,17 +1148,17 @@ impl<'a> ExpectSelf<'a> for FactorExpression<'a> {
 
                 Ok(FactorExpression {
                     factor_type: FactorExpressionType::UnaryFactor(v, Box::new(expr)),
-                    position: ast
-                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    position: ast.create_standard_position(first_token_index),
+                    has_return_value,
                 })
             }
             _ => {
-                let exponent = ExponentExpression::expect(ast)?;
+                let exponent = ExponentExpression::expect(ast, has_return_value)?;
 
                 Ok(FactorExpression {
                     factor_type: FactorExpressionType::Exponent(Box::new(exponent)),
-                    position: ast
-                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    position: ast.create_standard_position(first_token_index),
+                    has_return_value,
                 })
             }
         }
@@ -1180,25 +1166,25 @@ impl<'a> ExpectSelf<'a> for FactorExpression<'a> {
 }
 
 impl<'a> ExpectSelf<'a> for ExponentExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
-        let call = CallExpression::expect(ast)?;
+        let call = CallExpression::expect(ast, has_return_value)?;
         ast.index += 1;
         let mut sub_exprs = vec![];
         if ast.current_token_type() == eoi!() {
             ast.index -= 1;
-            let position =
-                ast.create_position(first_token_index, ast.index - first_token_index + 1);
+            let position = ast.create_standard_position(first_token_index);
 
             return Ok(ExponentExpression {
                 position,
                 main_expression: call,
                 sub_expressions: sub_exprs,
+                has_return_value,
             });
         }
         loop {
-            let sub_expr = match SubExponentExpression::expect(ast) {
+            let sub_expr = match SubExponentExpression::expect(ast, has_return_value) {
                 Ok(v) => v,
                 Err(e) => match e {
                     ParserError::WrongForm => {
@@ -1212,26 +1198,27 @@ impl<'a> ExpectSelf<'a> for ExponentExpression<'a> {
             sub_exprs.push(sub_expr);
             if ast.current_token_type() == eoi!() {
                 ast.index -= 1;
-                let position =
-                    ast.create_position(first_token_index, ast.index - first_token_index + 1);
+                let position = ast.create_standard_position(first_token_index);
 
                 return Ok(ExponentExpression {
                     position,
                     main_expression: call,
                     sub_expressions: sub_exprs,
+                    has_return_value,
                 });
             }
         }
         Ok(ExponentExpression {
             main_expression: call,
             sub_expressions: sub_exprs,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for SubExponentExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         if ast.current_token_type() != exponent!() {
@@ -1240,7 +1227,7 @@ impl<'a> ExpectSelf<'a> for SubExponentExpression<'a> {
         ast.index += 1;
         ast.step_over_whitespace_and_block_comments();
         let expr =
-            match CallExpression::expect(ast) {
+            match CallExpression::expect(ast, has_return_value) {
                 Ok(v) => v,
                 Err(e) => match e {
                     ParserError::WrongForm => return Err(ast.create_parse_error_with_message(
@@ -1255,16 +1242,18 @@ impl<'a> ExpectSelf<'a> for SubExponentExpression<'a> {
 
         Ok(SubExponentExpression {
             expression: expr,
-            position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+            position: ast.create_standard_position(first_token_index),
+            has_return_value,
+
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for CallExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
-        let atom = AtomicExpression::expect(ast)?;
+        let mut atom = AtomicExpression::expect(ast, has_return_value)?;
         let index_after_atom = ast.index;
         ast.index += 1;
         ast.step_over_whitespace_and_block_comments();
@@ -1275,7 +1264,8 @@ impl<'a> ExpectSelf<'a> for CallExpression<'a> {
             return Ok(CallExpression {
                 atom,
                 func_call_params: params,
-                position: ast.create_position(first_token_index, ast.index - first_token_index + 1),
+                position: ast.create_standard_position(first_token_index),
+                has_return_value,
             });
         }
         if ast.current_token().token_type == l_paren!() {
@@ -1286,13 +1276,13 @@ impl<'a> ExpectSelf<'a> for CallExpression<'a> {
         while ast.current_token().token_type == l_paren!() {
             ast.index += 1;
             let mut args = vec![];
-            match Expression::expect(ast) {
+            match Expression::expect(ast, true) {
                 Ok(v) => {
                     args.push(v);
                     ast.index += 1;
                     ast.step_over_whitespace_and_block_comments();
                     while ast.current_token().token_type == comma!() {
-                        let next_expr = match Expression::expect(ast) {
+                        let next_expr = match Expression::expect(ast, true) {
                             Ok(v) => v,
                             Err(e) => match e {
                                 ParserError::WrongForm => {
@@ -1345,17 +1335,21 @@ impl<'a> ExpectSelf<'a> for CallExpression<'a> {
                 break;
             }
         }
-        let position = ast.create_position(first_token_index, ast.index - first_token_index + 1);
+        if params.is_some() {
+            atom.has_return_value = true;
+        }
+        let position = ast.create_standard_position(first_token_index);
         Ok(CallExpression {
             position,
             atom,
             func_call_params: params,
+            has_return_value,
         })
     }
 }
 
 impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
-    fn expect(ast: &mut Ast<'a>) -> ParserResult<'a, Self> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
         ast.step_over_whitespace_and_block_comments();
         let first_token_index = ast.index;
         let atom_type = match ast.current_token().token_type {
@@ -1391,7 +1385,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
             l_paren!() => {
                 let first_token_index = ast.index;
                 ast.index += 1;
-                let expr = match Expression::expect(ast) {
+                let expr = match Expression::expect(ast, has_return_value) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -1429,11 +1423,8 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 ast.step_over_whitespace_and_block_comments();
                 let mut args = vec![];
                 while ast.current_token().token_type == identifier!() {
-                    let ident = Identifier {
-                        id: ast.current_token().contents,
-                        position: ast.create_position(ast.index, 1),
-                    };
-                    ast.program.identifier_literals.register_value(ident.id);
+                    let ident = ast.current_token().contents;
+                    ast.program.identifier_literals.register_value(ident);
                     args.push(ident);
                     ast.index += 1;
                     ast.step_over_whitespace_and_block_comments();
@@ -1463,7 +1454,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 }
                 ast.index += 1;
                 ast.step_over_whitespace_and_comments_and_terminators();
-                let body = match Block::expect(ast) {
+                let body = match Block::expect(ast, false) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -1479,10 +1470,11 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 AtomicExpressionType::FuncDef(FunctionDefinitionExpression { args, body })
             }
             if_!() => {
+                println!("Parsing if expression with return value: {}", has_return_value);
                 let first_token_index = ast.index;
                 ast.index += 1;
                 ast.step_over_whitespace_and_block_comments();
-                let condition = match Expression::expect(ast) {
+                let condition = match Expression::expect(ast, true) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -1506,10 +1498,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 }
                 ast.index += 1;
                 ast.step_over_whitespace_and_comments_and_terminators();
-                let then_block = match Block::expect_with_extra_args(
-                    ast,
-                    true,
-                ) {
+                let then_block = match Block::expect(ast, has_return_value) {
                     Ok(v) => v,
                     Err(e) => match e {
                         ParserError::WrongForm => {
@@ -1530,7 +1519,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                     let first_token_index = ast.index;
                     ast.index += 1;
                     ast.step_over_whitespace_and_block_comments();
-                    let condition = match Expression::expect(ast) {
+                    let condition = match Expression::expect(ast, true) {
                         Ok(v) => v,
                         Err(e) => match e {
                             ParserError::WrongForm => {
@@ -1554,10 +1543,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                     }
                     ast.index += 1;
                     ast.step_over_whitespace_and_comments_and_terminators();
-                    let then_block = match Block::expect_with_extra_args(
-                        ast,
-                        true,
-                    ) {
+                    let then_block = match Block::expect(ast, has_return_value) {
                         Ok(v) => v,
                         Err(e) => match e {
                             ParserError::WrongForm => {
@@ -1571,10 +1557,10 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                         },
                     };
                     elif_expressions.push(ElifNode {
-                        position: ast
-                            .create_position(first_token_index, ast.index - first_token_index + 1),
+                        position: ast.create_standard_position(first_token_index),
                         then_block,
                         condition,
+                        has_return_value,
                     });
                     last_valid_index = ast.index;
                     ast.index += 1;
@@ -1584,10 +1570,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                     let first_token_index = ast.index;
                     ast.index += 1;
                     ast.step_over_whitespace_and_block_comments();
-                    let else_block = match Block::expect_with_extra_args(
-                        ast,
-                        true,
-                    ) {
+                    let else_block = match Block::expect(ast, has_return_value) {
                         Ok(v) => v,
                         Err(e) => match e {
                             ParserError::WrongForm => {
@@ -1601,21 +1584,28 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                         },
                     };
                     Some(ElseNode {
-                        position: ast
-                            .create_position(first_token_index, ast.index - first_token_index + 1),
+                        position: ast.create_standard_position(first_token_index),
                         else_block,
+                        has_return_value,
                     })
                 } else {
                     ast.index = last_valid_index;
                     None
                 };
+                if has_return_value && else_expression.is_none() {
+                    return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "Expected a 'else' block after 'if' block with a return value".into(),
+                    ));
+                }
                 let node = IfNode {
                     condition,
                     then_block,
                     elif_nodes: elif_expressions,
                     else_nodes: else_expression,
-                    position: ast
-                        .create_position(first_token_index, ast.index - first_token_index + 1),
+                    position: ast.create_standard_position(first_token_index),
+                    has_return_value,
                 };
                 AtomicExpressionType::IfExpression(Box::new(node))
             }
@@ -1631,11 +1621,12 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 unreachable!()
             }
         };
-        let position = ast.create_position(first_token_index, ast.index - first_token_index + 1);
+        let position = ast.create_standard_position(first_token_index);
 
         let ret = AtomicExpression {
             atom_type,
             position,
+            has_return_value,
         };
         Ok(ret)
     }

@@ -1,6 +1,5 @@
 use crate::lexer::lex::{Lexer, Token};
 pub(crate) mod ast;
-mod validator;
 use ast::Ast;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;

@@ -80,7 +80,7 @@ impl Bytecode {
 
         self.instructions.extend_from_slice(&num.to_le_bytes())
     }
-
+    
     pub(crate) fn read_usize(&self, index: usize) -> usize {
         usize::from_le_bytes(
             self.instructions
@@ -1143,7 +1143,6 @@ impl<'a> BytecodeInterpreter<'a> {
         // SAFETY: Calling collect_garbage is safe because we do not hold any pointer or references to anything owned by the GC.
         unsafe {
             self.gc.collect_garbage(&self.stack, &self.stack_frames);
-
         }
     }
 
@@ -1262,7 +1261,7 @@ impl<'a> AnacondaValue<'a> {
 #[cfg(test)]
 mod tests {
 
-    use crate::{runtime::gc::{GarbageCollector, GcValue}};
+    use crate::runtime::gc::{GarbageCollector, GcValue};
 
     #[test]
     fn test_ub() -> Result<(), Box<dyn std::error::Error>> {
@@ -1272,9 +1271,8 @@ mod tests {
             // SAFETY: We hold no outstanding references to anything owned by the GC
             // SAFETY: And calling collect_garbage with an empty stack and stack_frames is always safe under these circumstances.
             gc.collect_garbage(&vec![], &vec![]);
-
         }
-        
+
         Ok(())
     }
 }
