@@ -5,12 +5,53 @@ use crate::lexer::lex::{
     l_paren, less_than, less_than_equals, loop_, minus, normal_block_comment, not, not_equals, or,
     percent, plus, r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt,
     while_, white_space, ArithmeticOperatorTokenType, AssignmentOperatorTokenType,
-    BooleanComparisonKeywordTokenType, ComparisonOperatorTokenType, KeywordTokenType,
-    TermOperatorTokenType, Token, TokenType, UnaryOperatorTokenType,
+    BooleanComparisonKeywordTokenType, ComparisonOperatorTokenType, KeywordTokenType, LexerError,
+    LexerErrorContents, TermOperatorTokenType, Token, TokenType, UnaryOperatorTokenType,
 };
 use crate::runtime::bytecode::{Program, ValueStore};
 use ibig::{ibig, IBig};
 use std::fmt::{Debug, Display};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParserErrorContents<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) message: String,
+    pub(crate) input: &'a str,
+    pub(crate) offending_tokens: Vec<Token<'a>>,
+}
+impl<'a> Display for ParserError<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WrongForm => unreachable!(),
+            Self::IncorrectSyntax(e) => {
+                let v: Vec<_> = e
+                    .iter()
+                    .map(|x| LexerErrorContents {
+                        line_number: x.position.start.line_number,
+                        column_number: x.position.start.column_number,
+                        error_message: x.message.clone(),
+                        index: x.offending_tokens[0].start.index,
+                        input: x.input,
+                        len: x.offending_tokens[x.offending_tokens.len() - 1].end.index
+                            - x.offending_tokens[0].start.index
+                            + 1,
+                    })
+                    .collect();
+                println!("{:#?}", v[0]);
+                println!("{:#?}", e[0].offending_tokens[0]);
+                println!("{:#?}", e[0].offending_tokens.last().unwrap());
+                let l = LexerError::Incorrect(v);
+                writeln!(f, "{l}")?;
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParserError<'_> {}
+
+pub(crate) type ParserResult<'a, T> = Result<T, ParserError<'a>>;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct NodePositionData<'a> {
     pub(crate) contents: &'a str,
@@ -79,7 +120,6 @@ pub(crate) struct ElseNode<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) else_block: Block<'a>,
     pub(crate) has_return_value: bool,
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,23 +296,6 @@ pub(crate) enum ParserError<'a> {
     WrongForm,
     IncorrectSyntax(Vec<ParserErrorContents<'a>>),
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ParserErrorContents<'a> {
-    pub(crate) position: NodePositionData<'a>,
-    pub(crate) message: String,
-}
-impl<'a> Display for ParserError<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::WrongForm => unreachable!(),
-            Self::IncorrectSyntax(e) => {
-                write!(f, "{e:#?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ParserError<'_> {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Ast<'a> {
@@ -348,6 +371,10 @@ impl<'a> Ast<'a> {
         ParserError::IncorrectSyntax(vec![ParserErrorContents {
             message,
             position: self.create_position(first_token_index, number_of_tokens_used),
+            input: self.input,
+            offending_tokens: self.tokens
+                [first_token_index..first_token_index + number_of_tokens_used]
+                .to_vec(),
         }])
     }
 
@@ -439,8 +466,6 @@ fn parse_int(contents: &str) -> IBig {
     res
 }
 
-pub(crate) type ParserResult<'a, T> = Result<T, ParserError<'a>>;
-
 trait ExpectSelf<'a>: Sized {
     fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self>;
 }
@@ -451,6 +476,7 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
         ast.step_over_whitespace_and_block_comments();
         let indentation_level_for_this_block = ast.current_column_number();
         let mut children = Vec::new();
+        let mut last_valid_index = first_token_index;
         loop {
             ast.step_over_whitespace_and_comments_and_terminators();
             if ast.current_token().token_type == eoi!() {
@@ -460,18 +486,14 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                 .current_column_number()
                 .cmp(&indentation_level_for_this_block);
             match cmp {
-                std::cmp::Ordering::Less => {
-                    ast.index -= 1;
-                    break;
-                }
+                std::cmp::Ordering::Less => break,
+
                 std::cmp::Ordering::Equal => {
                     let statement = match Statement::expect(ast, last_statement_is_expression) {
                         Ok(statement) => statement,
                         Err(error) => match error {
-                            ParserError::WrongForm => {
-                                ast.index -= 1;
-                                break;
-                            }
+                            ParserError::WrongForm => break,
+
                             _ => return Err(error),
                         },
                     };
@@ -481,10 +503,7 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                     let block = match Block::expect(ast, last_statement_is_expression) {
                         Ok(block) => block,
                         Err(error) => match error {
-                            ParserError::WrongForm => {
-                                ast.index -= 1;
-                                break;
-                            }
+                            ParserError::WrongForm => break,
 
                             _ => return Err(error),
                         },
@@ -492,8 +511,10 @@ impl<'a> ExpectSelf<'a> for Block<'a> {
                     children.push(BlockChild::Block(block));
                 }
             }
-            ast.index = ast.index.wrapping_add(1);
+            last_valid_index = ast.index;
+            ast.index += 1;
         }
+        ast.index = last_valid_index;
         if ast.current_token_type() == eoi!() {
             ast.index -= 1;
         }
@@ -1244,7 +1265,6 @@ impl<'a> ExpectSelf<'a> for SubExponentExpression<'a> {
             expression: expr,
             position: ast.create_standard_position(first_token_index),
             has_return_value,
-
         })
     }
 }
@@ -1470,7 +1490,10 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 AtomicExpressionType::FuncDef(FunctionDefinitionExpression { args, body })
             }
             if_!() => {
-                println!("Parsing if expression with return value: {}", has_return_value);
+                println!(
+                    "Parsing if expression with return value: {}",
+                    has_return_value
+                );
                 let first_token_index = ast.index;
                 ast.index += 1;
                 ast.step_over_whitespace_and_block_comments();
@@ -1596,7 +1619,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                     return Err(ast.create_parse_error_with_message(
                         ast.index,
                         1,
-                        "Expected a 'else' block after 'if' block with a return value".into(),
+                        "Expected an 'else' block after 'if' block with a return value".into(),
                     ));
                 }
                 let node = IfNode {

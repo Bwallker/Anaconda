@@ -24,6 +24,7 @@ pub(crate) trait GenerateBytecode {
 impl<'a> GenerateBytecode for Block<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         bytecode.push_opcode(OpCodes::BeginBlock);
+        let idx_before_children = ast.index;
         for child in self.children.iter().remove_last() {
             child.gen_bytecode(bytecode, ast, gc);
         }
@@ -43,7 +44,13 @@ impl<'a> GenerateBytecode for Block<'a> {
                 }
             },
         }
-        bytecode.push_opcode(OpCodes::EndBlock);
+        let idx_after_children = ast.index;
+        // If our children generated no instructions, we don't need to create a block.
+        if idx_before_children == idx_after_children {
+            bytecode.instructions.pop();
+        } else {
+            bytecode.push_opcode(OpCodes::EndBlock);
+        }
     }
 }
 

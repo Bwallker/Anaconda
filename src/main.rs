@@ -72,7 +72,7 @@ fn main() {
             stdout
                 .set_color(ColorSpec::new().set_fg(Some(Color::Red)))
                 .unwrap();
-            writeln!(&mut stdout, "Lexer Error!").unwrap();
+            writeln!(&mut stdout, "Error!").unwrap();
             writeln!(&mut stdout, "------------").unwrap();
             writeln!(&mut stdout, "{e}").unwrap();
             exit(69);

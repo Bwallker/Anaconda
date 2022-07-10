@@ -337,9 +337,7 @@ pub(crate) use fun;
 
 macro_rules! class {
     () => {
-        crate::lexer::lex::TokenType::Keyword(
-            crate::lexer::lex::KeywordTokenType::ClassDefinition,
-        )
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::ClassDefinition)
     };
 }
 
@@ -967,12 +965,12 @@ impl<'a> std::error::Error for LexerError<'a> {}
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) struct LexerErrorContents<'a> {
-    line_number: LineNumber,
-    column_number: ColumnNumber,
-    index: usize,
-    error_message: String,
-    input: &'a str,
-    len: usize,
+    pub(crate) line_number: LineNumber,
+    pub(crate) column_number: ColumnNumber,
+    pub(crate) index: usize,
+    pub(crate) error_message: String,
+    pub(crate) input: &'a str,
+    pub(crate) len: usize,
 }
 
 impl<'a> LexerErrorContents<'a> {
@@ -1010,6 +1008,9 @@ impl<'a> LexerErrorContents<'a> {
         {
             end_index -= 1;
         }
+        if end_index < start_index {
+            end_index = start_index;
+        }
         &self.input[start_index..=end_index]
     }
 
@@ -1043,6 +1044,26 @@ impl<'a> LexerErrorContents<'a> {
             index,
             len,
         }
+    }
+
+    fn line_number_prefix(&self) -> String {
+        let mut res = Vec::new();
+        for _ in 0..8 {
+            res.push(b' ');
+        }
+        res.push(b'|');
+        res.extend_from_slice(format!("{}", self.line_number + 1).as_bytes());
+        res.push(b'|');
+
+        res.reverse();
+        while res.len() > 10 {
+            let b = res.pop().unwrap();
+            if b != b' ' && b != b'|' {
+                res.push(b);
+                break;
+            }
+        }
+        String::from_utf8(res).unwrap()
     }
 }
 impl<'a> LexerError<'a> {
@@ -1078,10 +1099,21 @@ impl Display for LexerError<'_> {
         match self {
             LexerError::Incorrect(errors) => {
                 for e in errors {
+                    let line_number_prefix = e.line_number_prefix();
+                    let caret_prefix = {
+                        let mut s = String::with_capacity(line_number_prefix.len());
+                        for _ in 0..line_number_prefix.len() {
+                            s.push(' ');
+                        }
+                        s
+                    };
+
                     write!(
                         f,
-                        "{}\n{}\n------------\n{}:{} {}\n\n",
+                        "{}{}\n{}{}\n------------\n{}:{} {}\n\n",
+                        line_number_prefix,
                         e.find_line(),
+                        caret_prefix,
                         e.place_caret(),
                         e.line_number + 1,
                         e.column_number + 1,
