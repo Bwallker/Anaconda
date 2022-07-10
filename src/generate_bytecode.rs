@@ -9,5 +9,6 @@ pub(crate) fn generate_bytecode(ast: &mut Ast<'_>, gc: &mut GarbageCollector) ->
     block.gen_bytecode(&mut res, ast, gc);
     // EndBlock opcode to offset the global scope we add when initializing our VM.
     res.push_opcode(OpCodes::EndBlock);
+    //println!("{:#?}", res.instructions.len());
     res
 }

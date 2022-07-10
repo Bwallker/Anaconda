@@ -24,7 +24,7 @@ pub(crate) trait GenerateBytecode {
 impl<'a> GenerateBytecode for Block<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         bytecode.push_opcode(OpCodes::BeginBlock);
-        let idx_before_children = ast.index;
+        let idx_before_children = bytecode.instructions.len();
         for child in self.children.iter().remove_last() {
             child.gen_bytecode(bytecode, ast, gc);
         }
@@ -44,7 +44,7 @@ impl<'a> GenerateBytecode for Block<'a> {
                 }
             },
         }
-        let idx_after_children = ast.index;
+        let idx_after_children = bytecode.instructions.len();
         // If our children generated no instructions, we don't need to create a block.
         if idx_before_children == idx_after_children {
             bytecode.instructions.pop();
@@ -296,6 +296,7 @@ impl<'a> GenerateBytecode for SubExponentExpression<'a> {
 impl<'a> GenerateBytecode for CallExpression<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         if let Some(ref func_calls_params) = self.func_call_params {
+            println!("has_return_value: {}", self.has_return_value);
             self.atom.gen_bytecode(bytecode, ast, gc);
             for params in func_calls_params.iter() {
                 for param in params.iter() {

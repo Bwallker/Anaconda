@@ -13,7 +13,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-const TEST_PROGRAM: &str = "\t ";
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
@@ -24,9 +23,6 @@ struct Cli {
 enum Commands {
     #[clap(alias = "l")]
     Lex(Lex),
-
-    #[clap(alias = "lt")]
-    LexTestProgram,
 
     #[clap(alias = "p")]
     Parse(Parse),
@@ -111,14 +107,7 @@ fn run() -> color_eyre::Result<()> {
                 Err(e) => return Err(eyre!(format!("{e}"))),
             }
         }
-        Commands::LexTestProgram => {
-            let mut lexer = lexer::lex::Lexer::new(TEST_PROGRAM);
-            let tokens = lexer.collect_tokens();
-            match tokens {
-                Ok(v) => println!("{v:#?}"),
-                Err(e) => println!("{e}"),
-            }
-        }
+
         Commands::Parse(p) => {
             let contents = match (p.program, p.program_path) {
                 (None, None) => {
