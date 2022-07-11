@@ -1,3 +1,4 @@
+use super::set_has_return_value::SetHasReturnValue;
 use crate::runtime::{
     bytecode::{Bytecode, Function, OpCodes, USIZE_BYTES},
     gc::{GarbageCollector, GcValue},
@@ -24,7 +25,7 @@ pub(crate) trait GenerateBytecode {
 impl<'a> GenerateBytecode for Block<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         bytecode.push_opcode(OpCodes::BeginBlock);
-        let idx_before_children = bytecode.instructions.len();
+        let addr_before_children = bytecode.instructions.len();
         for child in self.children.iter().remove_last() {
             child.gen_bytecode(bytecode, ast, gc);
         }
@@ -44,9 +45,9 @@ impl<'a> GenerateBytecode for Block<'a> {
                 }
             },
         }
-        let idx_after_children = bytecode.instructions.len();
+        let addr_after_children = bytecode.instructions.len();
         // If our children generated no instructions, we don't need to create a block.
-        if idx_before_children == idx_after_children {
+        if addr_before_children == addr_after_children {
             bytecode.instructions.pop();
         } else {
             bytecode.push_opcode(OpCodes::EndBlock);
@@ -296,7 +297,6 @@ impl<'a> GenerateBytecode for SubExponentExpression<'a> {
 impl<'a> GenerateBytecode for CallExpression<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         if let Some(ref func_calls_params) = self.func_call_params {
-            println!("has_return_value: {}", self.has_return_value);
             self.atom.gen_bytecode(bytecode, ast, gc);
             for params in func_calls_params.iter() {
                 for param in params.iter() {
@@ -382,26 +382,31 @@ impl<'a> GenerateBytecode for AtomicExpression<'a> {
                 bytecode.push_opcode(OpCodes::Return);
                 bytecode.push_opcode(OpCodes::EndOfFunctionDefinition);
             }
-            AtomicExpressionType::IfExpression(ref if_node) => {
-                if_node.condition.gen_bytecode(bytecode, ast, gc);
+            AtomicExpressionType::IfExpression(ref if_expression) => {
+                let mut addr_before_last_condition = bytecode.instructions.len();
+                if_expression.condition.gen_bytecode(bytecode, ast, gc);
 
                 bytecode.push_opcode(OpCodes::IfFalseGoto);
                 let addr_of_if_goto = bytecode.instructions.len();
                 bytecode.push_usize(0);
-                if_node.then_block.gen_bytecode(bytecode, ast, gc);
+
+                if_expression.then_block.gen_bytecode(bytecode, ast, gc);
 
                 bytecode.push_opcode(OpCodes::Goto);
                 let addr_of_body_goto = bytecode.instructions.len();
                 bytecode.push_usize(0);
 
                 let first_elif_addr = bytecode.instructions.len();
-                let mut elif_exprs_end_addresses = Vec::with_capacity(if_node.elif_nodes.len());
-                for elif_expr in if_node.elif_nodes.iter() {
+                let mut elif_exprs_end_addresses =
+                    Vec::with_capacity(if_expression.elif_expressions.len());
+                for elif_expr in if_expression.elif_expressions.iter() {
+                    addr_before_last_condition = bytecode.instructions.len();
                     elif_expr.condition.gen_bytecode(bytecode, ast, gc);
                     bytecode.push_opcode(OpCodes::IfFalseGoto);
                     let addr_of_elif_goto = bytecode.instructions.len();
                     bytecode.push_usize(0);
                     elif_expr.then_block.gen_bytecode(bytecode, ast, gc);
+
                     bytecode.push_opcode(OpCodes::Goto);
                     let addr_of_body_goto = bytecode.instructions.len();
                     bytecode.push_usize(0);
@@ -409,14 +414,16 @@ impl<'a> GenerateBytecode for AtomicExpression<'a> {
                     bytecode.set_usize(addr_of_elif_goto, bytecode.instructions.len());
                 }
                 let addr_of_else_goto = bytecode.instructions.len();
-                if let Some(ref v) = if_node.else_nodes {
+                if let Some(ref v) = if_expression.else_expression {
                     v.else_block.gen_bytecode(bytecode, ast, gc);
                 }
                 let first_thing_after = bytecode.instructions.len();
+                let size_of_else_block = first_thing_after - addr_of_else_goto;
+
                 bytecode.set_usize(
                     addr_of_if_goto,
-                    if if_node.elif_nodes.is_empty() {
-                        if if_node.else_nodes.is_none() {
+                    if if_expression.elif_expressions.is_empty() {
+                        if if_expression.else_expression.is_none() {
                             first_thing_after
                         } else {
                             addr_of_else_goto
@@ -430,6 +437,16 @@ impl<'a> GenerateBytecode for AtomicExpression<'a> {
                     bytecode.set_usize(addr, first_thing_after);
                 }
                 bytecode.set_usize(addr_of_body_goto, first_thing_after);
+                if if_expression.else_expression.is_some() && size_of_else_block == 0 {
+                    bytecode.instructions.drain(addr_before_last_condition..);
+                    let mut cond = if let Some(v) = if_expression.elif_expressions.last() {
+                        v.condition.clone()
+                    } else {
+                        if_expression.condition.clone()
+                    };
+                    cond.set_has_return_value(false);
+                    cond.gen_bytecode(bytecode, ast, gc);
+                }
             }
 
             ref unknown => {

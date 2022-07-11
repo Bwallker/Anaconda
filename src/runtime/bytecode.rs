@@ -80,7 +80,17 @@ impl Bytecode {
 
         self.instructions.extend_from_slice(&num.to_le_bytes())
     }
-    
+
+    pub(crate) fn rm_opcode(&mut self) {
+        self.instructions.pop();
+    }
+
+    pub(crate) fn rm_usize(&mut self) {
+        for _ in 0..USIZE_BYTES {
+            self.instructions.pop();
+        }
+    }
+
     pub(crate) fn read_usize(&self, index: usize) -> usize {
         usize::from_le_bytes(
             self.instructions

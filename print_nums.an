@@ -24,4 +24,5 @@ main = fun()
         println(factorial(count))
         count += 1
 
-main()
+//main()
+print_factorials(30)

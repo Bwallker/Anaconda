@@ -1,4 +1,5 @@
 pub(crate) mod bytecode_generator;
+mod set_has_return_value;
 use crate::{parser::ast::Ast, runtime::gc::GarbageCollector};
 use crate::runtime::bytecode::{Bytecode, OpCodes};
 use self::bytecode_generator::GenerateBytecode;

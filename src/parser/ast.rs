@@ -37,9 +37,6 @@ impl<'a> Display for ParserError<'a> {
                             + 1,
                     })
                     .collect();
-                println!("{:#?}", v[0]);
-                println!("{:#?}", e[0].offending_tokens[0]);
-                println!("{:#?}", e[0].offending_tokens.last().unwrap());
                 let l = LexerError::Incorrect(v);
                 writeln!(f, "{l}")?;
                 Ok(())
@@ -98,17 +95,17 @@ pub(crate) enum StatementType<'a> {
     WhileStatement(WhileStatement<'a>),
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct IfNode<'a> {
+pub(crate) struct IfExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) condition: Expression<'a>,
     pub(crate) then_block: Block<'a>,
-    pub(crate) elif_nodes: Vec<ElifNode<'a>>,
-    pub(crate) else_nodes: Option<ElseNode<'a>>,
+    pub(crate) elif_expressions: Vec<ElifExpression<'a>>,
+    pub(crate) else_expression: Option<ElseExpression<'a>>,
     pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ElifNode<'a> {
+pub(crate) struct ElifExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) condition: Expression<'a>,
     pub(crate) then_block: Block<'a>,
@@ -116,7 +113,7 @@ pub(crate) struct ElifNode<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ElseNode<'a> {
+pub(crate) struct ElseExpression<'a> {
     pub(crate) position: NodePositionData<'a>,
     pub(crate) else_block: Block<'a>,
     pub(crate) has_return_value: bool,
@@ -269,7 +266,7 @@ pub(crate) enum AtomicExpressionType<'a> {
     String(usize),
     Bool(bool),
     ExpressionWithParentheses(Box<Expression<'a>>),
-    IfExpression(Box<IfNode<'a>>),
+    IfExpression(Box<IfExpression<'a>>),
     List(ListExpression),
     Dict(DictExpression),
     For(ForExpression),
@@ -1490,10 +1487,6 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 AtomicExpressionType::FuncDef(FunctionDefinitionExpression { args, body })
             }
             if_!() => {
-                println!(
-                    "Parsing if expression with return value: {}",
-                    has_return_value
-                );
                 let first_token_index = ast.index;
                 ast.index += 1;
                 ast.step_over_whitespace_and_block_comments();
@@ -1579,7 +1572,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                             _ => return Err(e),
                         },
                     };
-                    elif_expressions.push(ElifNode {
+                    elif_expressions.push(ElifExpression {
                         position: ast.create_standard_position(first_token_index),
                         then_block,
                         condition,
@@ -1606,7 +1599,7 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                             _ => return Err(e),
                         },
                     };
-                    Some(ElseNode {
+                    Some(ElseExpression {
                         position: ast.create_standard_position(first_token_index),
                         else_block,
                         has_return_value,
@@ -1622,15 +1615,15 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                         "Expected an 'else' block after 'if' block with a return value".into(),
                     ));
                 }
-                let node = IfNode {
+                let if_expression = IfExpression {
                     condition,
                     then_block,
-                    elif_nodes: elif_expressions,
-                    else_nodes: else_expression,
+                    elif_expressions,
+                    else_expression,
                     position: ast.create_standard_position(first_token_index),
                     has_return_value,
                 };
-                AtomicExpressionType::IfExpression(Box::new(node))
+                AtomicExpressionType::IfExpression(Box::new(if_expression))
             }
 
             terminator!() | r_paren!() => return Err(ParserError::WrongForm),
