@@ -1,10 +1,5 @@
-if true
-    if true
-        1
-    else 
-        2
-else
-    if true
-        3
-    else
-        4
+z = y = x = 1
+z += y += x += 1
+println(x)
+println(y)
+println(z)

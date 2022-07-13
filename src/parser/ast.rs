@@ -1,12 +1,13 @@
 use crate::lexer::lex::{
     and, assignment_operator_tt, bitshift_left, bitshift_right, bitwise_and, bitwise_or,
-    bitwise_xor, break_, comma, comment_tt, continue_, docs_block_comment, elif, else_, eoi,
+    bitwise_xor, break_, class, comma, comment_tt, continue_, docs_block_comment, elif, else_, eoi,
     equals, exponent, false_, fun, greater_than, greater_than_equals, identifier, if_, int,
     l_paren, less_than, less_than_equals, loop_, minus, normal_block_comment, not, not_equals, or,
-    percent, plus, r_paren, return_, slash, star, string, terminator, true_, unary_operator_tt,
-    while_, white_space, ArithmeticOperatorTokenType, AssignmentOperatorTokenType,
-    BooleanComparisonKeywordTokenType, ComparisonOperatorTokenType, KeywordTokenType, LexerError,
-    LexerErrorContents, TermOperatorTokenType, Token, TokenType, UnaryOperatorTokenType,
+    percent, plus, r_paren, return_, slash, star, string, sub_type_of, terminator, true_,
+    unary_operator_tt, while_, white_space, ArithmeticOperatorTokenType,
+    AssignmentOperatorTokenType, BooleanComparisonKeywordTokenType, ComparisonOperatorTokenType,
+    KeywordTokenType, LexerError, LexerErrorContents, TermOperatorTokenType, Token, TokenType,
+    UnaryOperatorTokenType,
 };
 use crate::runtime::bytecode::{Program, ValueStore};
 use ibig::{ibig, IBig};
@@ -89,34 +90,9 @@ pub(crate) enum StatementType<'a> {
     Return(Option<Expression<'a>>),
     Continue,
     Break,
-    Assignment(usize, AssignmentOperatorTokenType, Expression<'a>),
     Expr(Expression<'a>),
     LoopStatement(LoopStatement<'a>),
     WhileStatement(WhileStatement<'a>),
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct IfExpression<'a> {
-    pub(crate) position: NodePositionData<'a>,
-    pub(crate) condition: Expression<'a>,
-    pub(crate) then_block: Block<'a>,
-    pub(crate) elif_expressions: Vec<ElifExpression<'a>>,
-    pub(crate) else_expression: Option<ElseExpression<'a>>,
-    pub(crate) has_return_value: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ElifExpression<'a> {
-    pub(crate) position: NodePositionData<'a>,
-    pub(crate) condition: Expression<'a>,
-    pub(crate) then_block: Block<'a>,
-    pub(crate) has_return_value: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ElseExpression<'a> {
-    pub(crate) position: NodePositionData<'a>,
-    pub(crate) else_block: Block<'a>,
-    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,23 +230,57 @@ pub(crate) struct AtomicExpression<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Int {
-    Big(usize),
-    Small(usize),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AtomicExpressionType<'a> {
     Int(Int),
     Identifier(usize),
     String(usize),
     Bool(bool),
+    Assignment(AssignmentExpression<'a>),
     ExpressionWithParentheses(Box<Expression<'a>>),
     IfExpression(Box<IfExpression<'a>>),
     List(ListExpression),
     Dict(DictExpression),
     For(ForExpression),
     FuncDef(FunctionDefinitionExpression<'a>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Int {
+    Big(usize),
+    Small(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AssignmentExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) ident: usize,
+    pub(crate) value: Expression<'a>,
+    pub(crate) assignment_type: AssignmentOperatorTokenType,
+    pub(crate) has_return_value: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IfExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) condition: Expression<'a>,
+    pub(crate) then_block: Block<'a>,
+    pub(crate) elif_expressions: Vec<ElifExpression<'a>>,
+    pub(crate) else_expression: Option<ElseExpression<'a>>,
+    pub(crate) has_return_value: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ElifExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) condition: Expression<'a>,
+    pub(crate) then_block: Block<'a>,
+    pub(crate) has_return_value: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ElseExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) else_block: Block<'a>,
+    pub(crate) has_return_value: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -285,8 +295,29 @@ pub(crate) struct ForExpression;
 pub(crate) struct WhileExpression;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FunctionDefinitionExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
     pub(crate) args: Vec<&'a str>,
     pub(crate) body: Block<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClassDefinitionExpression<'a> {
+    pub(crate) position: NodePositionData<'a>,
+    pub(crate) members: Vec<ClassMember<'a>>,
+    pub(crate) super_types: Vec<usize>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AccessModifier {
+    Public,
+    Protected,
+    Private,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClassMember<'a> {
+    pub(crate) is_static: bool,
+    pub(crate) access_modifier: AccessModifier,
+    pub(crate) name: usize,
+    pub(crate) value: Option<Expression<'a>>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ParserError<'a> {
@@ -730,45 +761,6 @@ impl<'a> ExpectSelf<'a> for Statement<'a> {
                     statement_type,
                     position: ast.create_standard_position(first_token_index),
                 });
-            }
-            identifier!() => {
-                let first_token_index = ast.index;
-                let ident_id = ast
-                    .program
-                    .identifier_literals
-                    .register_value(ast.current_token().contents);
-                ast.index += 1;
-                ast.step_over_whitespace_and_block_comments();
-                match ast.current_token_type() {
-                    assignment_operator_tt!(assign_tok) => {
-                        ast.index += 1;
-                        ast.step_over_whitespace_and_block_comments();
-                        match Expression::expect(ast, true) {
-                                Ok(expression) => {
-
-                                    return Ok(Statement {
-                                        statement_type: StatementType::Assignment(
-                                            ident_id,
-                                            assign_tok,
-                                            expression,
-                                        ),
-                                        position: ast.create_standard_position(first_token_index)
-                                    });
-                                }
-                                Err(error) => match error {
-                                    ParserError::WrongForm => {
-                                        return Err(ast.create_parse_error_with_message(
-                                            ast.index,
-                                            1,
-                                            "Expected a terminator or an expression after assignment operator.".to_string()
-                                        ))
-                                    },
-                                    _ => Err(error),
-                                },
-                        }
-                    }
-                    _ => create_statement_expression!(),
-                }
             }
             _ => {
                 create_statement_expression!()
@@ -1388,14 +1380,20 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 let idx = ast.program.string_literals.register_value(value);
                 AtomicExpressionType::String(idx)
             }
-            identifier!() => {
-                let idx = ast
-                    .program
-                    .identifier_literals
-                    .register_value(ast.current_token().contents);
+            identifier!() => match AssignmentExpression::expect(ast, has_return_value) {
+                Ok(v) => AtomicExpressionType::Assignment(v),
+                Err(e) => match e {
+                    ParserError::WrongForm => {
+                        let idx = ast
+                            .program
+                            .identifier_literals
+                            .register_value(ast.current_token().contents);
 
-                AtomicExpressionType::Identifier(idx)
-            }
+                        AtomicExpressionType::Identifier(idx)
+                    }
+                    _ => return Err(e),
+                },
+            },
             true_!() | false_!() => {
                 AtomicExpressionType::Bool(ast.current_token().token_type == true_!())
             }
@@ -1484,7 +1482,11 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                         _ => return Err(e),
                     },
                 };
-                AtomicExpressionType::FuncDef(FunctionDefinitionExpression { args, body })
+                AtomicExpressionType::FuncDef(FunctionDefinitionExpression {
+                    args,
+                    body,
+                    position: ast.create_standard_position(first_token_index),
+                })
             }
             if_!() => {
                 let first_token_index = ast.index;
@@ -1625,7 +1627,44 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
                 };
                 AtomicExpressionType::IfExpression(Box::new(if_expression))
             }
-
+            /*class!() => {
+                let first_token_index = ast.index;
+                ast.index += 1;
+                ast.step_over_whitespace_and_block_comments();
+                let mut super_types = vec![];
+                if ast.current_token_type() == sub_type_of!() {
+                    let idx_of_sub_type_of_keyword = ast.index;
+                    ast.index += 1;
+                    ast.step_over_whitespace_and_block_comments();
+                    if ast.current_token_type() != identifier!() {
+                        return Err(ast.create_parse_error_with_message(
+                            idx_of_sub_type_of_keyword,
+                            1,
+                            "Expected the name of one or more supertypes after 'sub_type_of' keyword".into(),
+                        ));
+                    }
+                    while ast.current_token_type() == identifier!() {
+                        let id = ast
+                            .program
+                            .identifier_literals
+                            .register_value(ast.current_token().contents);
+                        super_types.push(id);
+                        ast.index += 1;
+                        ast.step_over_whitespace_and_block_comments();
+                        if ast.current_token_type() == comma!() {
+                            ast.index += 1;
+                            ast.step_over_whitespace_and_block_comments();
+                        }
+                    }
+                }
+                if ast.current_token_type() != terminator!() {
+                    return Err(ast.create_parse_error_with_message(
+                        ast.index,
+                        1,
+                        "Expected a terminator after 'class' declaration".into(),
+                    ));
+                }
+            }*/
             terminator!() | r_paren!() => return Err(ParserError::WrongForm),
             x => {
                 println!("{x:#?}");
@@ -1645,5 +1684,49 @@ impl<'a> ExpectSelf<'a> for AtomicExpression<'a> {
             has_return_value,
         };
         Ok(ret)
+    }
+}
+
+impl<'a> ExpectSelf<'a> for AssignmentExpression<'a> {
+    fn expect(ast: &mut Ast<'a>, has_return_value: bool) -> ParserResult<'a, Self> {
+        if let identifier!() = ast.current_token_type() {
+            let first_token_index = ast.index;
+            let ident_id = ast
+                .program
+                .identifier_literals
+                .register_value(ast.current_token().contents);
+            ast.index += 1;
+            ast.step_over_whitespace_and_block_comments();
+            match ast.current_token_type() {
+                assignment_operator_tt!(assign_tok) => {
+                    ast.index += 1;
+                    ast.step_over_whitespace_and_block_comments();
+                    match Expression::expect(ast, true) {
+                        Ok(expression) => Ok(AssignmentExpression {
+                            position: ast.create_standard_position(first_token_index),
+                            assignment_type: assign_tok,
+                            has_return_value,
+                            ident: ident_id,
+                            value: expression,
+                        }),
+                        Err(error) => match error {
+                            ParserError::WrongForm => Err(ast.create_parse_error_with_message(
+                                ast.index,
+                                1,
+                                "Expected an expression after assignment operator.".to_string(),
+                            )),
+                            _ => Err(error),
+                        },
+                    }
+                }
+
+                _ => {
+                    ast.index = first_token_index;
+                    Err(ParserError::WrongForm)
+                }
+            }
+        } else {
+            Err(ParserError::WrongForm)
+        }
     }
 }

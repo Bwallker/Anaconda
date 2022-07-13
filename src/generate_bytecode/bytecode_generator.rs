@@ -91,31 +91,6 @@ impl<'a> GenerateBytecode for StatementType<'a> {
             Self::Continue => {
                 bytecode.push_opcode(OpCodes::Continue);
             }
-            Self::Assignment(i, a, e) => {
-                let operator_opcode = match a {
-                    AssignmentOperatorTokenType::Assign => OpCodes::Assign,
-                    AssignmentOperatorTokenType::BitshiftLeftAssign => {
-                        OpCodes::BitshiftLeftAndAssign
-                    }
-
-                    AssignmentOperatorTokenType::BitshiftRightAssign => {
-                        OpCodes::BitshiftRightAndAssign
-                    }
-
-                    AssignmentOperatorTokenType::BitwiseAndAssign => OpCodes::BitwiseAndAndAssign,
-                    AssignmentOperatorTokenType::BitwiseOrAssign => OpCodes::BitwiseOrAndAssign,
-                    AssignmentOperatorTokenType::BitwiseXorAssign => OpCodes::BitwiseXorAndAssign,
-                    AssignmentOperatorTokenType::MinusAssign => OpCodes::SubAndAssign,
-                    AssignmentOperatorTokenType::PlusAssign => OpCodes::AddAndAssign,
-                    AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
-                    AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
-                    AssignmentOperatorTokenType::PercentAssign => OpCodes::ModuloAndAssign,
-                    AssignmentOperatorTokenType::ExponentAssign => OpCodes::ExponentAndAssign,
-                };
-                e.gen_bytecode(bytecode, ast, gc);
-                bytecode.push_opcode(operator_opcode);
-                bytecode.push_usize(*i);
-            }
             StatementType::LoopStatement(l) => {
                 bytecode.push_opcode(OpCodes::StartOfLoop);
                 let addr_of_loop_start = bytecode.instructions.len();
@@ -446,6 +421,35 @@ impl<'a> GenerateBytecode for AtomicExpression<'a> {
                     };
                     cond.set_has_return_value(false);
                     cond.gen_bytecode(bytecode, ast, gc);
+                }
+            }
+
+            AtomicExpressionType::Assignment(ref ae) => {
+                let operator_opcode = match ae.assignment_type {
+                    AssignmentOperatorTokenType::Assign => OpCodes::Assign,
+                    AssignmentOperatorTokenType::BitshiftLeftAssign => {
+                        OpCodes::BitshiftLeftAndAssign
+                    }
+
+                    AssignmentOperatorTokenType::BitshiftRightAssign => {
+                        OpCodes::BitshiftRightAndAssign
+                    }
+
+                    AssignmentOperatorTokenType::BitwiseAndAssign => OpCodes::BitwiseAndAndAssign,
+                    AssignmentOperatorTokenType::BitwiseOrAssign => OpCodes::BitwiseOrAndAssign,
+                    AssignmentOperatorTokenType::BitwiseXorAssign => OpCodes::BitwiseXorAndAssign,
+                    AssignmentOperatorTokenType::MinusAssign => OpCodes::SubAndAssign,
+                    AssignmentOperatorTokenType::PlusAssign => OpCodes::AddAndAssign,
+                    AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
+                    AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
+                    AssignmentOperatorTokenType::PercentAssign => OpCodes::ModuloAndAssign,
+                    AssignmentOperatorTokenType::ExponentAssign => OpCodes::ExponentAndAssign,
+                };
+                ae.value.gen_bytecode(bytecode, ast, gc);
+                bytecode.push_opcode(operator_opcode);
+                bytecode.push_usize(ae.ident);
+                if !ae.has_return_value {
+                    bytecode.push_opcode(OpCodes::Pop);
                 }
             }
 

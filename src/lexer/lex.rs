@@ -166,6 +166,7 @@ pub(crate) enum KeywordTokenType {
     Statement(StatementKeywordTokenType),
     FunctionDefinition,
     ClassDefinition,
+    SubTypeOf,
     Loop(LoopKeywordTokenType),
     Value(ValueKeywordTokenType),
 }
@@ -342,6 +343,14 @@ macro_rules! class {
 }
 
 pub(crate) use class;
+
+macro_rules! sub_type_of {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::SubTypeOf)
+    };
+}
+
+pub(crate) use sub_type_of;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum LoopKeywordTokenType {
@@ -1770,6 +1779,8 @@ impl<'a> Lexer<'a> {
         keyword("break", break_!()).boxed(),
         keyword("continue", continue_!()).boxed(),
         keyword("return", return_!()).boxed(),
+
+        keyword("subtypeof", sub_type_of!()).boxed(),
 
         keyword("true", true_!()).boxed(),
         keyword("false", false_!()).boxed(),

@@ -13,6 +13,14 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+
+const TEST_PROGRAM: &str = "
+z += y += x = 1
+println(x)
+println(y)
+println(z)
+";
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
@@ -29,6 +37,9 @@ enum Commands {
 
     #[clap(alias = "r")]
     Run(Run),
+
+    #[clap(alias = "rt")]
+    RunTest,
 }
 #[derive(Args, Debug)]
 struct Lex {
@@ -161,6 +172,19 @@ fn run() -> color_eyre::Result<()> {
             let mut bytecode_interpreter = BytecodeInterpreter::new(ast.program, bytecode, gc);
             bytecode_interpreter.interpret_bytecode();
         }
+
+        Commands::RunTest => {
+            let ast = parse(TEST_PROGRAM);
+            let mut ast = match ast {
+                Ok(v) => v,
+                Err(e) => return Err(eyre!(format!("{e}"))),
+            };
+            let mut gc = GarbageCollector::new();
+            let bytecode = generate_bytecode(&mut ast, &mut gc);
+            let mut bytecode_interpreter = BytecodeInterpreter::new(ast.program, bytecode, gc);
+            bytecode_interpreter.interpret_bytecode();
+        }
+
     }
     Ok(())
 }

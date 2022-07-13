@@ -47,6 +47,7 @@ impl<T: PartialEq + Eq + Hash + Debug + Clone> ValueStore<T> {
         ret
     }
 }
+
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Bytecode {
@@ -724,11 +725,12 @@ impl<'a> BytecodeInterpreter<'a> {
                         {
                             self.program_counter += 1;
                             let from_stack_var = self.stack.pop().expect("Stack should not be empty");
+
                             let idx = self.bytecode.read_usize(self.program_counter);
                             self.program_counter += USIZE_BYTES;
-                            let var = self.get_var_by_index_mut(idx);
-
-                            match (var, from_stack_var) {
+                            // Here we use a raw pointer because the borrow checker complains and says that our reference has been moved after the match statement if we use a &mut.
+                            let ptr = self.get_var_by_index_mut(idx) as *mut AnacondaValue;
+                            match (unsafe { &mut *ptr }, from_stack_var) {
                                 (AnacondaValue::Int(val), AnacondaValue::Int(from_stack)) => {
                                     if opcode == OpCodes::BitshiftLeftAndAssign {
                                         *val *= ibig!(2).pow((from_stack % (IBig::from(usize::MAX) + 1usize)).try_into().unwrap())
@@ -757,11 +759,13 @@ impl<'a> BytecodeInterpreter<'a> {
                                     if opcode == OpCodes::Assign {
                                         *other_1 = other_2;
                                     } else {
-                                        panic!("Cannot perform operation {} on {other_1} and {other_2}", stringify!($e))
+                                        panic!("Cannot perform operation {} on {other_1:?} and {other_2:?}", stringify!($e))
 
                                     }
                                 }
                             }
+
+                            self.stack.push(unsafe{(*ptr).clone()});
 
                         }
                 }
@@ -1148,11 +1152,21 @@ impl<'a> BytecodeInterpreter<'a> {
         while self.program_counter < self.bytecode.instructions.len() {
             self.interpret_next_instruction();
         }
-        println!("{:#?}", self.stack_frames);
-        println!("{:#?}", self.stack);
+
         // SAFETY: Calling collect_garbage is safe because we do not hold any pointer or references to anything owned by the GC.
         unsafe {
             self.gc.collect_garbage(&self.stack, &self.stack_frames);
+        }
+
+        if !self.stack_frames.is_empty() || !self.stack.is_empty() {
+            println!("{:#?}", self.stack_frames);
+            println!("{:#?}", self.stack);
+            self.stack.clear();
+            self.stack_frames.clear();
+            unsafe {
+                self.gc.collect_garbage(&self.stack, &self.stack_frames);
+            }
+            panic!("Stack or StackFrames is not empty after interpreting bytecode!");
         }
     }
 
