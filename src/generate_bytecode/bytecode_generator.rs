@@ -1,8 +1,4 @@
-use super::set_has_return_value::SetHasReturnValue;
-use crate::runtime::{
-    bytecode::{Bytecode, Function, OpCodes, USIZE_BYTES},
-    gc::{GarbageCollector, GcValue},
-};
+use super::set_has_return_value::SetContext;
 use crate::{
     lexer::lex::{
         ArithmeticOperatorTokenType, AssignmentOperatorTokenType,
@@ -17,6 +13,13 @@ use crate::{
         SubExpression, SubTermExpression, TermExpression,
     },
     util::RemoveLastTrait,
+};
+use crate::{
+    parser::ast::AssignmentExpressionType,
+    runtime::{
+        bytecode::{Bytecode, Function, OpCodes, USIZE_BYTES},
+        gc::{GarbageCollector, GcValue},
+    },
 };
 pub(crate) trait GenerateBytecode {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector);
@@ -34,7 +37,7 @@ impl<'a> GenerateBytecode for Block<'a> {
             Some(v) => match v {
                 BlockChild::Block(b) => b.gen_bytecode(bytecode, ast, gc),
                 BlockChild::Statement(s) => {
-                    if self.last_statement_is_expression {
+                    if self.ctx.has_return_value {
                         match s.statement_type {
                             StatementType::Expr(ref e) => e.gen_bytecode(bytecode, ast, gc),
                             _ => unreachable!(),
@@ -127,7 +130,7 @@ impl<'a> GenerateBytecode for Expression<'a> {
 impl<'a> GenerateBytecode for SubExpression<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         self.expression.gen_bytecode(bytecode, ast, gc);
-        if self.has_return_value {
+        if self.ctx.has_return_value {
             let opcode = match self.keyword {
                 BooleanComparisonKeywordTokenType::And => OpCodes::BooleanAnd,
                 BooleanComparisonKeywordTokenType::Or => OpCodes::BooleanOr,
@@ -145,7 +148,7 @@ impl<'a> GenerateBytecode for ComparisonExpression<'a> {
             }
             ComparisonExpressionType::Not(ref e) => {
                 e.gen_bytecode(bytecode, ast, gc);
-                if self.has_return_value {
+                if self.ctx.has_return_value {
                     bytecode.push_opcode(OpCodes::BooleanNot);
                 }
             }
@@ -165,7 +168,7 @@ impl<'a> GenerateBytecode for ComparisonChainExpression<'a> {
 impl<'a> GenerateBytecode for SubComparisonExpression<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         self.expression.gen_bytecode(bytecode, ast, gc);
-        if self.has_return_value {
+        if self.ctx.has_return_value {
             let comparator = match self.operator {
                 ComparisonOperatorTokenType::Equals => OpCodes::Equals,
                 ComparisonOperatorTokenType::NotEquals => OpCodes::NotEquals,
@@ -191,7 +194,7 @@ impl<'a> GenerateBytecode for ArithmeticExpression<'a> {
 impl<'a> GenerateBytecode for SubArithmeticExpression<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         self.expression.gen_bytecode(bytecode, ast, gc);
-        if self.has_return_value {
+        if self.ctx.has_return_value {
             let arith_op = match self.operator {
                 ArithmeticOperatorTokenType::Unary(u) => match u {
                     UnaryOperatorTokenType::Minus => OpCodes::Sub,
@@ -219,7 +222,7 @@ impl<'a> GenerateBytecode for TermExpression<'a> {
 impl<'a> GenerateBytecode for SubTermExpression<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         self.expression.gen_bytecode(bytecode, ast, gc);
-        if self.has_return_value {
+        if self.ctx.has_return_value {
             bytecode.push_opcode(match self.operator {
                 TermOperatorTokenType::BitshiftLeft => OpCodes::BitshiftLeft,
                 TermOperatorTokenType::BitshiftRight => OpCodes::BitshiftRight,
@@ -239,7 +242,7 @@ impl<'a> GenerateBytecode for FactorExpression<'a> {
             }
             FactorExpressionType::UnaryFactor(u, ref f) => {
                 f.gen_bytecode(bytecode, ast, gc);
-                if self.has_return_value {
+                if self.ctx.has_return_value {
                     bytecode.push_opcode(match u {
                         UnaryOperatorTokenType::BitwiseNot => OpCodes::BitwiseNot,
                         UnaryOperatorTokenType::Plus => OpCodes::UnaryPlus,
@@ -263,7 +266,7 @@ impl<'a> GenerateBytecode for ExponentExpression<'a> {
 impl<'a> GenerateBytecode for SubExponentExpression<'a> {
     fn gen_bytecode(&self, bytecode: &mut Bytecode, ast: &mut Ast<'_>, gc: &mut GarbageCollector) {
         self.expression.gen_bytecode(bytecode, ast, gc);
-        if self.has_return_value {
+        if self.ctx.has_return_value {
             bytecode.push_opcode(OpCodes::Exponent)
         }
     }
@@ -280,7 +283,7 @@ impl<'a> GenerateBytecode for CallExpression<'a> {
                 bytecode.push_opcode(OpCodes::CallFunction);
                 bytecode.push_usize(params.len());
             }
-            if !self.has_return_value {
+            if !self.ctx.has_return_value {
                 bytecode.push_opcode(OpCodes::Pop);
             }
         } else {
@@ -294,32 +297,32 @@ impl<'a> GenerateBytecode for AtomicExpression<'a> {
         match self.atom_type {
             AtomicExpressionType::Int(ref i) => match i {
                 Int::Small(value) => {
-                    if self.has_return_value {
+                    if self.ctx.has_return_value {
                         bytecode.push_opcode(OpCodes::LoadSmallIntLiteral);
                         bytecode.push_usize(*value);
                     }
                 }
                 Int::Big(index) => {
-                    if self.has_return_value {
+                    if self.ctx.has_return_value {
                         bytecode.push_opcode(OpCodes::LoadBigIntLiteral);
                         bytecode.push_usize(*index);
                     }
                 }
             },
             AtomicExpressionType::String(ref index) => {
-                if self.has_return_value {
+                if self.ctx.has_return_value {
                     bytecode.push_opcode(OpCodes::LoadStringLiteral);
                     bytecode.push_usize(*index);
                 }
             }
             AtomicExpressionType::Identifier(ref index) => {
-                if self.has_return_value {
+                if self.ctx.has_return_value {
                     bytecode.push_opcode(OpCodes::LoadVariableValueFromIndex);
                     bytecode.push_usize(*index);
                 }
             }
             AtomicExpressionType::Bool(b) => {
-                if self.has_return_value {
+                if self.ctx.has_return_value {
                     if b {
                         bytecode.push_opcode(OpCodes::LoadTrue)
                     } else {
@@ -419,39 +422,50 @@ impl<'a> GenerateBytecode for AtomicExpression<'a> {
                     } else {
                         if_expression.condition.clone()
                     };
-                    cond.set_has_return_value(false);
+                    let mut new_ctx = cond.ctx;
+                    new_ctx.has_return_value = false;
+                    cond.set_ctx(new_ctx);
                     cond.gen_bytecode(bytecode, ast, gc);
                 }
             }
 
-            AtomicExpressionType::Assignment(ref ae) => {
-                let operator_opcode = match ae.assignment_type {
-                    AssignmentOperatorTokenType::Assign => OpCodes::Assign,
-                    AssignmentOperatorTokenType::BitshiftLeftAssign => {
-                        OpCodes::BitshiftLeftAndAssign
-                    }
+            AtomicExpressionType::Assignment(ref ae) => match ae.assignment_type {
+                AssignmentExpressionType::Ident(ident, op, ref expr) => {
+                    let operator_opcode = match op {
+                        AssignmentOperatorTokenType::Assign => OpCodes::Assign,
+                        AssignmentOperatorTokenType::BitshiftLeftAssign => {
+                            OpCodes::BitshiftLeftAndAssign
+                        }
 
-                    AssignmentOperatorTokenType::BitshiftRightAssign => {
-                        OpCodes::BitshiftRightAndAssign
-                    }
+                        AssignmentOperatorTokenType::BitshiftRightAssign => {
+                            OpCodes::BitshiftRightAndAssign
+                        }
 
-                    AssignmentOperatorTokenType::BitwiseAndAssign => OpCodes::BitwiseAndAndAssign,
-                    AssignmentOperatorTokenType::BitwiseOrAssign => OpCodes::BitwiseOrAndAssign,
-                    AssignmentOperatorTokenType::BitwiseXorAssign => OpCodes::BitwiseXorAndAssign,
-                    AssignmentOperatorTokenType::MinusAssign => OpCodes::SubAndAssign,
-                    AssignmentOperatorTokenType::PlusAssign => OpCodes::AddAndAssign,
-                    AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
-                    AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
-                    AssignmentOperatorTokenType::PercentAssign => OpCodes::ModuloAndAssign,
-                    AssignmentOperatorTokenType::ExponentAssign => OpCodes::ExponentAndAssign,
-                };
-                ae.value.gen_bytecode(bytecode, ast, gc);
-                bytecode.push_opcode(operator_opcode);
-                bytecode.push_usize(ae.ident);
-                if !ae.has_return_value {
-                    bytecode.push_opcode(OpCodes::Pop);
+                        AssignmentOperatorTokenType::BitwiseAndAssign => {
+                            OpCodes::BitwiseAndAndAssign
+                        }
+                        AssignmentOperatorTokenType::BitwiseOrAssign => OpCodes::BitwiseOrAndAssign,
+                        AssignmentOperatorTokenType::BitwiseXorAssign => {
+                            OpCodes::BitwiseXorAndAssign
+                        }
+                        AssignmentOperatorTokenType::MinusAssign => OpCodes::SubAndAssign,
+                        AssignmentOperatorTokenType::PlusAssign => OpCodes::AddAndAssign,
+                        AssignmentOperatorTokenType::StarAssign => OpCodes::MultiplyAndAssign,
+                        AssignmentOperatorTokenType::SlashAssign => OpCodes::DivideAndAssign,
+                        AssignmentOperatorTokenType::PercentAssign => OpCodes::ModuloAndAssign,
+                        AssignmentOperatorTokenType::ExponentAssign => OpCodes::ExponentAndAssign,
+                    };
+                    expr.gen_bytecode(bytecode, ast, gc);
+                    bytecode.push_opcode(operator_opcode);
+                    bytecode.push_usize(ident);
+                    if !ae.ctx.has_return_value {
+                        bytecode.push_opcode(OpCodes::Pop);
+                    }
                 }
-            }
+                AssignmentExpressionType::ClassMember(ref _cm) => {
+                    unimplemented!()
+                }
+            },
 
             ref unknown => {
                 println!("{:#?}", unknown);

@@ -166,6 +166,8 @@ pub(crate) enum KeywordTokenType {
     Statement(StatementKeywordTokenType),
     FunctionDefinition,
     ClassDefinition,
+    AccessModifier(AccessModifierTokenType),
+    Static,
     SubTypeOf,
     Loop(LoopKeywordTokenType),
     Value(ValueKeywordTokenType),
@@ -414,6 +416,66 @@ macro_rules! true_ {
 }
 
 pub(crate) use true_;
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub(crate) enum AccessModifierTokenType {
+    Pub,
+    Priv,
+    Prot
+}
+
+macro_rules! access_modifier_kw_tt {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::AccessModifier(_),
+        )
+    };
+    ($i: ident) => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::AccessModifier($i),
+        )
+    };
+}
+
+pub(crate) use access_modifier_kw_tt;
+
+macro_rules! pub_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::AccessModifier(crate::lexer::lex::AccessModifierTokenType::Pub)
+        )
+    }
+}
+
+pub(crate) use pub_;
+
+macro_rules! priv_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::AccessModifier(crate::lexer::lex::AccessModifierTokenType::Priv)
+        )
+    }
+}
+
+pub(crate) use priv_;
+
+macro_rules! prot {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(
+            crate::lexer::lex::KeywordTokenType::AccessModifier(crate::lexer::lex::AccessModifierTokenType::Prot)
+        )
+    }
+}
+
+pub(crate) use prot;
+
+macro_rules! static_ {
+    () => {
+        crate::lexer::lex::TokenType::Keyword(crate::lexer::lex::KeywordTokenType::Static)
+    }
+}
+
+pub(crate) use static_;
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub(crate) enum OperatorTokenType {
@@ -1056,10 +1118,7 @@ impl<'a> LexerErrorContents<'a> {
     }
 
     fn line_number_prefix(&self) -> String {
-        let mut res = Vec::new();
-        for _ in 0..8 {
-            res.push(b' ');
-        }
+        let mut res = vec![b' '; 8];
         res.push(b'|');
         res.extend_from_slice(format!("{}", self.line_number + 1).as_bytes());
         res.push(b'|');
@@ -1781,10 +1840,14 @@ impl<'a> Lexer<'a> {
         keyword("return", return_!()).boxed(),
 
         keyword("subtypeof", sub_type_of!()).boxed(),
+        keyword("static", static_!()).boxed(),
 
         keyword("true", true_!()).boxed(),
         keyword("false", false_!()).boxed(),
 
+        keyword("pub", pub_!()).boxed(),
+        keyword("priv", priv_!()).boxed(),
+        keyword("prot", prot!()).boxed(),
 
         IdentifierParser.boxed(),
         ]);
